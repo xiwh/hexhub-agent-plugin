@@ -1,120 +1,92 @@
 package plugin
 
 import (
-	"bytes"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"github.com/wonderivan/logger"
-	"io"
-	"net"
-	"net/http"
 	"os"
+	"os/user"
+	"path/filepath"
 )
 
-var apiEndpoint = "https://api.gaydev.cc"
-var mainPluginEndpoint string
-var mToken string
-var mThisEndpoint string
-var mPluginId string
+var ApiEndpoint = "https://api.gaydev.cc"
+var AgentEndpoint = "http://127.0.0.1:35580"
 
-type pluginHandler struct {
+type Manifest struct {
+	Id          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Version     int    `json:"version"`
+	VersionName string `json:"versionName"`
+	ExecCommand string `json:"execCommand"`
 }
 
-func (t *pluginHandler) ServeHTTP(write http.ResponseWriter, req *http.Request) {
-	token := req.Header.Get("Token")
-	if token != mToken {
-		write.WriteHeader(500)
-	}
-}
+var HomeDir string
+var PluginDir string
 
-func Start(pluginId string) {
-	mPluginId = pluginId
-	mainPluginEndpoint = *flag.String("address", "http://127.0.0.1:35580", "")
-	mToken = *flag.String("token", "", "")
-	if mToken == "" {
-		panic("mToken is empty")
-	}
-	tcpAddress, err := net.ResolveTCPAddr("tcp", "0.0.0.0:0")
+func Init() {
+	current, err := user.Current()
 	if err != nil {
-		logger.Error(err)
-		panic(err)
-		return
-	}
-	err = http.ListenAndServe(fmt.Sprintf("%s:%d", tcpAddress.IP.String(), tcpAddress.Port), new(pluginHandler))
-	if err != nil {
-		logger.Error(err)
-		panic(err)
-		return
-	}
-	registerPlugin()
-	http.HandleFunc("kill", func(writer http.ResponseWriter, request *http.Request) {
-		os.Exit(0)
-	})
-}
-
-func registerPlugin() {
-	err := Post("register-plugin", nil, nil)
-	if err != nil {
-		logger.Error(err)
 		panic(err)
 	}
+	HomeDir = fmt.Sprintf("%s/.gaydev", current.HomeDir)
+	PluginDir = fmt.Sprintf("%s/plugins", HomeDir)
 }
 
-func Post(uri string, req any, result any) error {
-	var reqBuf *bytes.Buffer
-	if req != nil {
-		reqData, err := json.Marshal(req)
-		if err != nil {
-			return err
+func GetManifest(pluginId string) (Manifest, error) {
+	thisPluginDir := fmt.Sprintf("%s/%s", PluginDir, pluginId)
+	manifestFile := fmt.Sprintf("%s/manifest.json", thisPluginDir)
+	manifest, err := readManifestFile(manifestFile)
+	if err != nil {
+		return manifest, err
+	}
+	if manifest.Id != pluginId {
+		return manifest, fmt.Errorf("the plugin id is not match, the expected value is %s, but the actual value is %s", pluginId, manifest.Id)
+	}
+	return manifest, nil
+}
+
+func GetMyManifest() (Manifest, error) {
+	manifestFile := fmt.Sprintf("%s/manifest.json", GetCurrentPath())
+	manifest, err := readManifestFile(manifestFile)
+	return manifest, err
+}
+
+func GetManifests() (map[string]Manifest, error) {
+	plugins, err := os.ReadDir(PluginDir)
+	if err != nil {
+		return nil, err
+	}
+	manifests := make(map[string]Manifest, len(plugins))
+	for _, pluginPath := range plugins {
+		if pluginPath.IsDir() {
+			manifest, err := GetManifest(pluginPath.Name())
+			if err != nil {
+				logger.Error(err)
+				continue
+			}
+			manifests[manifest.Id] = manifest
+
 		}
-		reqBuf = bytes.NewBuffer(reqData)
 	}
+	return manifests, nil
+}
 
-	client := &http.Client{}
-	//生成要访问的url
-	url := fmt.Sprintf("%s/%s", mainPluginEndpoint, uri)
+func GetCurrentPath() string {
+	if ex, err := os.Executable(); err == nil {
+		return filepath.Dir(ex)
+	}
+	return "./"
+}
 
-	//提交请求
-	reqest, err := http.NewRequest("POST", url, reqBuf)
-
-	//增加header选项
-	reqest.Header.Add("Token", mToken)
-	reqest.Header.Add("PluginId", mPluginId)
-	reqest.Header.Add("Accept", "application/json")
-	reqest.Header.Add("Content-Type", "application/json")
-
+func readManifestFile(manifestFile string) (manifest Manifest, err error) {
+	manifestJson, err := os.ReadFile(manifestFile)
 	if err != nil {
-		return err
+		return manifest, err
 	}
-	//处理返回结果
-	response, _ := client.Do(reqest)
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			logger.Error(err)
-		}
-	}(response.Body)
-	if result == nil {
-		return nil
-	}
-	data, err := io.ReadAll(response.Body)
+	err = json.Unmarshal(manifestJson, &manifest)
 	if err != nil {
-		return err
+		return manifest, err
 	}
-	err = json.Unmarshal(data, result)
-	return err
-
-}
-
-func GetMainPluginEndpoint() string {
-	return mainPluginEndpoint
-}
-
-func GetMyEndpoint() string {
-	return mThisEndpoint
-}
-
-func GetApiEndpoint() string {
-	return apiEndpoint
+	return manifest, nil
 }
