@@ -3,6 +3,7 @@ package plugin
 import (
 	"encoding/json"
 	"fmt"
+	"gaydev-agent-plugin/util"
 	"github.com/wonderivan/logger"
 	"os"
 	"os/user"
@@ -19,6 +20,7 @@ type Manifest struct {
 	Version     int    `json:"version"`
 	VersionName string `json:"versionName"`
 	ExecCommand string `json:"execCommand"`
+	Endpoint    string `json:"endpoint"`
 }
 
 var HomeDir string
@@ -31,6 +33,13 @@ func Init() {
 	}
 	HomeDir = fmt.Sprintf("%s/.gaydev", current.HomeDir)
 	PluginDir = fmt.Sprintf("%s/plugins", HomeDir)
+	if !util.IsDir(PluginDir) {
+		err := os.MkdirAll(PluginDir, 0755)
+		if err != nil {
+			logger.Error(err)
+			panic(err)
+		}
+	}
 }
 
 func GetManifest(pluginId string) (Manifest, error) {
@@ -66,7 +75,6 @@ func GetManifests() (map[string]Manifest, error) {
 				continue
 			}
 			manifests[manifest.Id] = manifest
-
 		}
 	}
 	return manifests, nil

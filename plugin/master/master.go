@@ -5,21 +5,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"gaydev-agent-plugin/plugin"
 	"gaydev-agent-plugin/util"
 	uuid "github.com/satori/go.uuid"
 	"github.com/wonderivan/logger"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
-	"os/user"
 	"runtime"
 )
 
 var Token string
-var HomeDir string
-var PluginDir string
-var pluginMap = make(map[string]Plugin)
+var pluginMap = make(map[string]*PluginInfo)
 
 const PluginStatusNotInstalled = 0
 const PluginStatusDoownloading = 1
@@ -28,42 +25,103 @@ const PluginStatusInstallationFailed = 3
 const PluginStatusNotStarted = 4
 const PluginStatusStarted = 5
 
-type Plugin struct {
+type PluginInfo struct {
 	Id              string
 	Name            string
 	Description     string
 	Version         int
 	VersionName     string
-	Dir             string
 	ExecCommand     string
 	Port            int
 	Status          int
 	DownloadProcess int
 	ErrorMsg        string
 	Endpoint        string
+	PluginDir       string
 	Ctx             context.Context
-}
-
-type Manifest struct {
-	Id          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Version     int    `json:"version"`
-	VersionName string `json:"versionName"`
-	ExecCommand string `json:"execCommand"`
 }
 
 func Start() {
 	Token = uuid.NewV4().String()
-	user, err := user.Current()
+	plugin.Init()
+	manifests, err := plugin.GetManifests()
 	if err != nil {
 		panic(err)
 	}
-	HomeDir = user.HomeDir
-	PluginDir = fmt.Sprintf("%s/plugins", HomeDir)
+	for _, manifest := range manifests {
+		initManifest(manifest)
+	}
+	http.HandleFunc("register-plugin", func(writer http.ResponseWriter, request *http.Request) {
+		data, err := io.ReadAll(request.Body)
+		if err != nil {
+			logger.Error(err)
+			writer.WriteHeader(500)
+			return
+		}
+		var manifest *plugin.Manifest
+		err = json.Unmarshal(data, manifest)
+		if err != nil {
+			logger.Error(err)
+			writer.WriteHeader(500)
+			return
+		}
+		pluginInfo := initManifest(*manifest)
+		pluginInfo.Status = PluginStatusStarted
+		if pluginInfo.Ctx != nil {
+			pluginInfo.Ctx = context.Background()
+			go func() {
+				<-pluginInfo.Ctx.Done()
+				err := Post(pluginInfo.Id, "kill", nil, nil)
+				if err != nil {
+					logger.Error(err)
+				}
+				pluginInfo.Ctx = nil
+			}()
+		}
+	})
 }
 
-func downloadPlugin(pluginId string, plugin *Plugin) error {
+func initManifest(manifest plugin.Manifest) *PluginInfo {
+	pluginInfo, ok := pluginMap[manifest.Id]
+	if ok {
+		pluginInfo.Version = manifest.Version
+		pluginInfo.VersionName = manifest.VersionName
+		pluginInfo.ExecCommand = manifest.ExecCommand
+		pluginInfo.Description = manifest.Description
+		pluginInfo.Endpoint = manifest.Endpoint
+	} else {
+		pluginInfo := &PluginInfo{
+			Id:              manifest.Id,
+			Name:            manifest.Name,
+			Description:     manifest.Description,
+			Version:         manifest.Version,
+			VersionName:     manifest.VersionName,
+			ExecCommand:     manifest.ExecCommand,
+			Port:            -1,
+			Status:          PluginStatusNotStarted,
+			DownloadProcess: 0,
+			ErrorMsg:        "",
+			Endpoint:        manifest.Endpoint,
+			PluginDir:       fmt.Sprintf("%s/%s", plugin.PluginDir, manifest.Id),
+			Ctx:             nil,
+		}
+		pluginMap[manifest.Id] = pluginInfo
+	}
+	return pluginInfo
+}
+
+func StartPlugin(pluginId string) error {
+	manifest, err := plugin.GetManifest(pluginId)
+	if err != nil {
+		return err
+	}
+	pluginInfo := initManifest(manifest)
+	pluginInfo.Ctx = context.Background()
+	run(pluginInfo.Ctx, pluginInfo)
+	return nil
+}
+
+func downloadPlugin(pluginId string, plugin *PluginInfo) error {
 	url := "xxx"
 	path, err := util.DownloadFile(url, func(total int64, current int64) {
 		plugin.DownloadProcess = int(current / total * 100)
@@ -77,40 +135,12 @@ func downloadPlugin(pluginId string, plugin *Plugin) error {
 	return nil
 }
 
-func startPlugin(pluginId string, plugin *Plugin) error {
-	thisPluginDir := fmt.Sprintf("%s/%s", PluginDir, pluginId)
-	manifestFile := fmt.Sprintf("%s/manifest.json", thisPluginDir)
-	manifestJson, err := os.ReadFile(manifestFile)
-	if err != nil {
-		return err
-	}
-	var pluginManifest Manifest
-	err = json.Unmarshal(manifestJson, &pluginManifest)
-	if err != nil {
-		return err
-	}
-	if pluginManifest.Id != pluginId {
-		return fmt.Errorf("the plugin id is not match, the expected value is %s, but the actual value is %s", pluginId, pluginManifest.Id)
-	}
-	ctx := context.Background()
-	run(ctx, thisPluginDir, plugin, pluginManifest)
-	plugin.Ctx = ctx
-	plugin.Name = pluginManifest.Name
-	plugin.Description = pluginManifest.Description
-	plugin.Version = pluginManifest.Version
-	plugin.VersionName = pluginManifest.VersionName
-	plugin.Dir = thisPluginDir
-	plugin.ExecCommand = pluginManifest.ExecCommand
-	plugin.Version = pluginManifest.Version
-	return nil
-}
-
-func run(ctx context.Context, thisPluginDir string, plugin *Plugin, pluginManifest Manifest) {
+func run(ctx context.Context, plugin *PluginInfo) {
 	var cmdStr string
 	if runtime.GOOS == "windows" {
-		cmdStr = fmt.Sprintf("%s/%s", thisPluginDir, pluginManifest.ExecCommand)
+		cmdStr = fmt.Sprintf("%s/%s", plugin.PluginDir, plugin.ExecCommand)
 	} else {
-		cmdStr = fmt.Sprintf("cd %s && ./%s", thisPluginDir, pluginManifest.ExecCommand)
+		cmdStr = fmt.Sprintf("cd %s && ./%s", plugin.PluginDir, plugin.ExecCommand)
 	}
 	cmd := exec.Command(cmdStr, "-token", Token, "-address", plugin.Endpoint)
 	go func() {
@@ -141,11 +171,7 @@ func run(ctx context.Context, thisPluginDir string, plugin *Plugin, pluginManife
 			}
 		}()
 		<-ctx.Done()
-		err := Post(plugin.Id, "kill", nil, nil)
-		if err != nil {
-			logger.Error(err)
-		}
-		err = cmd.Process.Kill()
+		err := cmd.Process.Kill()
 		if err != nil {
 			logger.Error(err)
 		}
@@ -154,13 +180,13 @@ func run(ctx context.Context, thisPluginDir string, plugin *Plugin, pluginManife
 }
 
 func Post(pluginId string, uri string, req any, result any) error {
-	plugin, ok := pluginMap[pluginId]
+	pluginInfo, ok := pluginMap[pluginId]
 	if !ok {
-		return fmt.Errorf("plugin %s does not exist", pluginId)
+		return fmt.Errorf("pluginInfo %s does not exist", pluginId)
 	}
 
-	if plugin.Status != PluginStatusStarted {
-		return fmt.Errorf("plugin %s not started", pluginId)
+	if pluginInfo.Status != PluginStatusStarted {
+		return fmt.Errorf("pluginInfo %s not started", pluginId)
 	}
 
 	var reqBuf *bytes.Buffer
@@ -174,7 +200,7 @@ func Post(pluginId string, uri string, req any, result any) error {
 
 	client := &http.Client{}
 	//生成要访问的url
-	url := fmt.Sprintf("%s/%s", plugin.Endpoint, uri)
+	url := fmt.Sprintf("%s/%s", pluginInfo.Endpoint, uri)
 
 	//提交请求
 	request, err := http.NewRequest("POST", url, reqBuf)

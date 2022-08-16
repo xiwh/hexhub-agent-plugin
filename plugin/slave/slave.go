@@ -33,7 +33,7 @@ func Start(pluginId string) {
 	masterEndpoint = *flag.String("address", plugin.AgentEndpoint, "")
 	mToken = *flag.String("token", "", "")
 	if mToken == "" {
-		panic("mToken is empty")
+		panic("token is empty")
 	}
 	tcpAddress, err := net.ResolveTCPAddr("tcp", "0.0.0.0:0")
 	if err != nil {
@@ -41,6 +41,7 @@ func Start(pluginId string) {
 		panic(err)
 		return
 	}
+	mThisEndpoint = fmt.Sprintf("http://%s:%d", tcpAddress.IP, tcpAddress.Port)
 	err = http.ListenAndServe(fmt.Sprintf("%s:%d", tcpAddress.IP.String(), tcpAddress.Port), new(pluginHandler))
 	if err != nil {
 		logger.Error(err)
@@ -55,6 +56,7 @@ func Start(pluginId string) {
 
 func registerPlugin() {
 	manifest, err := plugin.GetMyManifest()
+	manifest.Endpoint = GetMyEndpoint()
 	if err != nil {
 		panic(err)
 	}
