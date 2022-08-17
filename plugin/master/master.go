@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os/exec"
 	"runtime"
+	"time"
 )
 
 var Token string
@@ -110,6 +111,22 @@ func initManifest(manifest plugin.Manifest) *PluginInfo {
 	return pluginInfo
 }
 
+func RestartPlugin(pluginId string) error {
+	_ = StopPlugin(pluginId)
+	time.Sleep(500 * time.Millisecond)
+	return StartPlugin(pluginId)
+}
+
+func StopPlugin(pluginId string) error {
+	pluginInfo, ok := pluginMap[pluginId]
+	if ok && pluginInfo.Ctx != nil {
+		_, cancelFunc := context.WithCancel(pluginInfo.Ctx)
+		cancelFunc()
+		return nil
+	}
+	return fmt.Errorf("plugin %s is not started", pluginId)
+}
+
 func StartPlugin(pluginId string) error {
 	manifest, err := plugin.GetManifest(pluginId)
 	if err != nil {
@@ -121,17 +138,24 @@ func StartPlugin(pluginId string) error {
 	return nil
 }
 
-func downloadPlugin(pluginId string, plugin *PluginInfo) error {
+func InstallPlugin(pluginId string, pluginInfo *PluginInfo) error {
 	url := "xxx"
 	path, err := util.DownloadFile(url, func(total int64, current int64) {
-		plugin.DownloadProcess = int(current / total * 100)
+		pluginInfo.DownloadProcess = int(current / total * 100)
 	})
 	if err != nil {
-		plugin.Status = PluginStatusDownloadFailed
-		plugin.ErrorMsg = err.Error()
+		pluginInfo.Status = PluginStatusDownloadFailed
+		pluginInfo.ErrorMsg = err.Error()
 		return err
 	}
-	println(path)
+	err = util.Unzip(path, pluginInfo.PluginDir, 0755)
+	if err != nil {
+		return err
+	}
+	//manifest, err := plugin.GetManifest(pluginId)
+	//if err != nil {
+	//	return err
+	//}
 	return nil
 }
 

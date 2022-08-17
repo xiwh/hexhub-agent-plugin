@@ -29,6 +29,7 @@ func (t *pluginHandler) ServeHTTP(write http.ResponseWriter, req *http.Request) 
 }
 
 func Start(pluginId string) {
+	plugin.Init()
 	mPluginId = pluginId
 	masterEndpoint = *flag.String("address", plugin.AgentEndpoint, "")
 	mToken = *flag.String("token", "", "")
