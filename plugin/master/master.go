@@ -1,4 +1,4 @@
-package plugin
+package master
 
 import (
 	"bytes"
@@ -11,8 +11,10 @@ import (
 	"github.com/wonderivan/logger"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -20,11 +22,12 @@ var Token string
 var pluginMap = make(map[string]*PluginInfo)
 
 const PluginStatusNotInstalled = 0
-const PluginStatusDoownloading = 1
+const PluginStatusDownloading = 1
 const PluginStatusDownloadFailed = 2
 const PluginStatusInstallationFailed = 3
 const PluginStatusNotStarted = 4
 const PluginStatusStarted = 5
+const PluginStatusStarting = 6
 
 type PluginInfo struct {
 	Id              string
@@ -42,18 +45,16 @@ type PluginInfo struct {
 	Ctx             context.Context
 }
 
-func Start() {
-	Token = uuid.NewV4().String()
-	plugin.Init()
-	manifests, err := plugin.GetManifests()
-	if err != nil {
-		panic(err)
-	}
-	for _, manifest := range manifests {
-		initManifest(manifest)
-	}
-	http.HandleFunc("register-plugin", func(writer http.ResponseWriter, request *http.Request) {
-		data, err := io.ReadAll(request.Body)
+type MasterRoute struct {
+}
+
+func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
+	uri := req.URL.RequestURI()
+	switch uri {
+	case "":
+	case "/":
+	case "/register-plugin":
+		data, err := io.ReadAll(req.Body)
 		if err != nil {
 			logger.Error(err)
 			writer.WriteHeader(500)
@@ -67,6 +68,12 @@ func Start() {
 			return
 		}
 		pluginInfo := initManifest(*manifest)
+		if pluginInfo.Status == PluginStatusStarted {
+			err := StartPlugin(pluginInfo.Id)
+			if err != nil {
+				logger.Error(err)
+			}
+		}
 		pluginInfo.Status = PluginStatusStarted
 		if pluginInfo.Ctx != nil {
 			pluginInfo.Ctx = context.Background()
@@ -79,7 +86,41 @@ func Start() {
 				pluginInfo.Ctx = nil
 			}()
 		}
-	})
+	default:
+		temp := uri[1:]
+		idx := strings.IndexAny(temp, "/?")
+		var pluginId string
+		if idx != -1 {
+			pluginId = temp[0:idx]
+		} else {
+			pluginId = temp[0:]
+		}
+		pluginInfo, ok := pluginMap[pluginId]
+		if ok && pluginInfo.Status == PluginStatusStarted && pluginInfo.Endpoint != "" {
+			redirectUrl := ""
+			if idx != -1 {
+				redirectUrl = temp[idx:]
+			}
+			redirectUrl = fmt.Sprintf("%s:%s", pluginInfo.Endpoint, redirectUrl)
+			http.Redirect(writer, req, redirectUrl, 301)
+			return
+		}
+		writer.WriteHeader(404)
+	}
+}
+
+func Start() {
+	Token = uuid.NewV4().String()
+	logger.Info("token:%s", Token)
+	plugin.Init()
+	manifests, err := plugin.GetManifests()
+	if err != nil {
+		panic(err)
+	}
+	for _, manifest := range manifests {
+		initManifest(manifest)
+	}
+	logger.Error(http.ListenAndServe(plugin.AgentAddr, new(MasterRoute)))
 }
 
 func initManifest(manifest plugin.Manifest) *PluginInfo {
@@ -103,7 +144,7 @@ func initManifest(manifest plugin.Manifest) *PluginInfo {
 			DownloadProcess: 0,
 			ErrorMsg:        "",
 			Endpoint:        manifest.Endpoint,
-			PluginDir:       fmt.Sprintf("%s/%s", plugin.PluginDir, manifest.Id),
+			PluginDir:       strings.Join([]string{plugin.PluginDir, string(os.PathSeparator), "manifest.Id"}, ""),
 			Ctx:             nil,
 		}
 		pluginMap[manifest.Id] = pluginInfo
@@ -112,8 +153,11 @@ func initManifest(manifest plugin.Manifest) *PluginInfo {
 }
 
 func RestartPlugin(pluginId string) error {
-	_ = StopPlugin(pluginId)
-	time.Sleep(500 * time.Millisecond)
+	err := StopPlugin(pluginId)
+	//如果之前在启动中，那么等待500ms再重启，避免重启失败
+	if err != nil {
+		time.Sleep(500 * time.Millisecond)
+	}
 	return StartPlugin(pluginId)
 }
 
@@ -159,32 +203,36 @@ func InstallPlugin(pluginId string, pluginInfo *PluginInfo) error {
 	return nil
 }
 
-func run(ctx context.Context, plugin *PluginInfo) {
+func run(ctx context.Context, pluginInfo *PluginInfo) {
 	var cmdStr string
 	if runtime.GOOS == "windows" {
-		cmdStr = fmt.Sprintf("%s/%s", plugin.PluginDir, plugin.ExecCommand)
+		cmdStr = fmt.Sprintf("%s/%s", pluginInfo.PluginDir, pluginInfo.ExecCommand)
 	} else {
-		cmdStr = fmt.Sprintf("cd %s && ./%s", plugin.PluginDir, plugin.ExecCommand)
+		cmdStr = fmt.Sprintf("cd %s && ./%s", pluginInfo.PluginDir, pluginInfo.ExecCommand)
 	}
-	cmd := exec.Command(cmdStr, "-token", Token, "-address", plugin.Endpoint)
+	cmd := exec.Command(cmdStr, "-token", Token, "-address", pluginInfo.Endpoint)
 	go func() {
 		defer func() {
-			plugin.Status = PluginStatusNotStarted
+			pluginInfo.Status = PluginStatusNotStarted
 			err := recover()
 			if err != nil {
 				logger.Error(err)
 			}
 		}()
+		pluginInfo.Status = PluginStatusStarting
 		err := cmd.Start()
 		if err != nil {
 			logger.Error(err)
 		}
-		plugin.Status = PluginStatusStarted
 		err = cmd.Wait()
 		if err != nil {
 			logger.Error(err)
 		}
-		plugin.Status = PluginStatusNotStarted
+		pluginInfo.Status = PluginStatusNotStarted
+		if pluginInfo.Ctx != nil {
+			_, cancelFunc := context.WithCancel(pluginInfo.Ctx)
+			cancelFunc()
+		}
 
 	}()
 	go func() {
@@ -195,11 +243,12 @@ func run(ctx context.Context, plugin *PluginInfo) {
 			}
 		}()
 		<-ctx.Done()
+		pluginInfo.Status = PluginStatusNotStarted
 		err := cmd.Process.Kill()
 		if err != nil {
 			logger.Error(err)
 		}
-		plugin.Ctx = nil
+		pluginInfo.Ctx = nil
 	}()
 }
 

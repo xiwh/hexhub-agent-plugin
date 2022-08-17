@@ -8,10 +8,12 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strings"
 )
 
 var ApiEndpoint = "https://api.gaydev.cc"
 var AgentEndpoint = "http://127.0.0.1:35580"
+var AgentAddr = "127.0.0.1:35580"
 
 type Manifest struct {
 	Id          string `json:"id"`
@@ -44,7 +46,7 @@ func Init() {
 
 func GetManifest(pluginId string) (Manifest, error) {
 	thisPluginDir := fmt.Sprintf("%s/%s", PluginDir, pluginId)
-	manifestFile := fmt.Sprintf("%s/manifest.json", thisPluginDir)
+	manifestFile := strings.Join([]string{thisPluginDir, string(os.PathSeparator), "manifest.json"}, "")
 	manifest, err := readManifestFile(manifestFile)
 	if err != nil {
 		return manifest, err
@@ -56,7 +58,8 @@ func GetManifest(pluginId string) (Manifest, error) {
 }
 
 func GetMyManifest() (Manifest, error) {
-	manifestFile := fmt.Sprintf("%s/manifest.json", GetCurrentPath())
+	manifestFile := strings.Join([]string{GetCurrentPath(), string(os.PathSeparator), "manifest.json"}, "")
+
 	manifest, err := readManifestFile(manifestFile)
 	return manifest, err
 }

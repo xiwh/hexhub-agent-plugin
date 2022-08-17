@@ -28,31 +28,35 @@ func (t *pluginHandler) ServeHTTP(write http.ResponseWriter, req *http.Request) 
 	}
 }
 
+func SetToken(token string) {
+	mToken = token
+}
+
 func Start(pluginId string) {
 	plugin.Init()
 	mPluginId = pluginId
 	masterEndpoint = *flag.String("address", plugin.AgentEndpoint, "")
-	mToken = *flag.String("token", "", "")
 	if mToken == "" {
-		panic("token is empty")
+		mToken = *flag.String("token", "", "")
+		if mToken == "" {
+			panic("token is empty")
+		}
 	}
-	tcpAddress, err := net.ResolveTCPAddr("tcp", "0.0.0.0:0")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		logger.Error(err)
 		panic(err)
-		return
 	}
-	mThisEndpoint = fmt.Sprintf("http://%s:%d", tcpAddress.IP, tcpAddress.Port)
-	err = http.ListenAndServe(fmt.Sprintf("%s:%d", tcpAddress.IP.String(), tcpAddress.Port), new(pluginHandler))
-	if err != nil {
-		logger.Error(err)
-		panic(err)
-		return
-	}
+	println(listener.Addr())
+	mThisEndpoint = fmt.Sprintf("http://127.0.0.1:%d", listener.Addr().(*net.TCPAddr).Port)
 	registerPlugin()
 	http.HandleFunc("kill", func(writer http.ResponseWriter, request *http.Request) {
 		os.Exit(0)
 	})
+	err = http.Serve(listener, new(pluginHandler))
+	if err != nil {
+		logger.Error(err)
+		panic(err)
+	}
 }
 
 func registerPlugin() {
