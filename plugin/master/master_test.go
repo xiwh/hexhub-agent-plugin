@@ -1,7 +1,7 @@
 package master
 
 import (
-	"gaydev-agent-plugin/plugin"
+	"github.com/xiwh/gaydev-agent-plugin/plugin"
 	"testing"
 	"time"
 )
