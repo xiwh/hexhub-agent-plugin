@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"gaydev-agent-plugin/util"
 	"github.com/wonderivan/logger"
@@ -14,6 +15,9 @@ import (
 var ApiEndpoint = "https://api.gaydev.cc"
 var AgentEndpoint = "http://127.0.0.1:35580"
 var AgentAddr = "127.0.0.1:35580"
+var Debug = false
+var HomeDir string
+var PluginDir string
 
 type Manifest struct {
 	Id          string `json:"id"`
@@ -25,10 +29,12 @@ type Manifest struct {
 	Endpoint    string `json:"endpoint"`
 }
 
-var HomeDir string
-var PluginDir string
+func SetDebug() {
+	Debug = true
+}
 
 func Init() {
+	Debug = *flag.Bool("debug", Debug, "")
 	current, err := user.Current()
 	if err != nil {
 		panic(err)

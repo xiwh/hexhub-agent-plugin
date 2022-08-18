@@ -1,14 +1,21 @@
 package slave
 
 import (
-	"net/http"
+	"gaydev-agent-plugin/plugin"
 	"testing"
+	"time"
 )
 
 func Test(t *testing.T) {
-	SetToken("92de28a6-53a2-4500-96c1-642b5ff4b85f")
-	http.HandleFunc("test", func(writer http.ResponseWriter, request *http.Request) {
-		println("aaaaa")
-	})
-	Start("abc")
+	plugin.SetDebug()
+
+	go func() {
+		for true {
+			time.Sleep(time.Second)
+			Post("test", "ping", nil, nil)
+			Post("", "ping", nil, nil)
+
+		}
+	}()
+	Start("test")
 }

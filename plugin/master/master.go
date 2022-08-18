@@ -53,23 +53,34 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 	switch uri {
 	case "":
 	case "/":
+	case "/ping":
+		println("master ping")
+		writer.WriteHeader(200)
+		_, err := writer.Write([]byte("ok"))
+		if err != nil {
+			logger.Error(err)
+		}
 	case "/register-plugin":
+		if !plugin.Debug && writer.Header().Get("Token") != Token {
+			writer.WriteHeader(404)
+			return
+		}
 		data, err := io.ReadAll(req.Body)
 		if err != nil {
 			logger.Error(err)
 			writer.WriteHeader(500)
 			return
 		}
-		var manifest *plugin.Manifest
-		err = json.Unmarshal(data, manifest)
+		var manifest plugin.Manifest
+		err = json.Unmarshal(data, &manifest)
 		if err != nil {
 			logger.Error(err)
 			writer.WriteHeader(500)
 			return
 		}
-		pluginInfo := initManifest(*manifest)
+		pluginInfo := initManifest(manifest)
 		if pluginInfo.Status == PluginStatusStarted {
-			err := StartPlugin(pluginInfo.Id)
+			err := StopPlugin(pluginInfo.Id)
 			if err != nil {
 				logger.Error(err)
 			}
@@ -86,6 +97,11 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 				pluginInfo.Ctx = nil
 			}()
 		}
+		writer.WriteHeader(200)
+		_, err = writer.Write([]byte("ok"))
+		if err != nil {
+			logger.Error(err)
+		}
 	default:
 		temp := uri[1:]
 		idx := strings.IndexAny(temp, "/?")
@@ -101,7 +117,7 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 			if idx != -1 {
 				redirectUrl = temp[idx:]
 			}
-			redirectUrl = fmt.Sprintf("%s:%s", pluginInfo.Endpoint, redirectUrl)
+			redirectUrl = pluginInfo.Endpoint + redirectUrl
 			http.Redirect(writer, req, redirectUrl, 301)
 			return
 		}
@@ -132,7 +148,7 @@ func initManifest(manifest plugin.Manifest) *PluginInfo {
 		pluginInfo.Description = manifest.Description
 		pluginInfo.Endpoint = manifest.Endpoint
 	} else {
-		pluginInfo := &PluginInfo{
+		pluginInfo = &PluginInfo{
 			Id:              manifest.Id,
 			Name:            manifest.Name,
 			Description:     manifest.Description,
@@ -144,7 +160,7 @@ func initManifest(manifest plugin.Manifest) *PluginInfo {
 			DownloadProcess: 0,
 			ErrorMsg:        "",
 			Endpoint:        manifest.Endpoint,
-			PluginDir:       strings.Join([]string{plugin.PluginDir, string(os.PathSeparator), "manifest.Id"}, ""),
+			PluginDir:       strings.Join([]string{plugin.PluginDir, string(os.PathSeparator), manifest.Id}, ""),
 			Ctx:             nil,
 		}
 		pluginMap[manifest.Id] = pluginInfo
@@ -269,6 +285,8 @@ func Post(pluginId string, uri string, req any, result any) error {
 			return err
 		}
 		reqBuf = bytes.NewBuffer(reqData)
+	} else {
+		reqBuf = bytes.NewBufferString("")
 	}
 
 	client := &http.Client{}
@@ -288,7 +306,10 @@ func Post(pluginId string, uri string, req any, result any) error {
 		return err
 	}
 	//处理返回结果
-	response, _ := client.Do(request)
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
