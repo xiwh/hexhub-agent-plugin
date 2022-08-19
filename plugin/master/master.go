@@ -120,8 +120,8 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 			if idx != -1 {
 				redirectUrl = temp[idx:]
 			}
-			redirectUrl = pluginInfo.Endpoint + redirectUrl
-			req.URL = testutils.ParseURI(redirectUrl)
+			req.URL = testutils.ParseURI(pluginInfo.Endpoint)
+			req.RequestURI = redirectUrl
 			req.Header.Add("Token", Token)
 			mForward.ServeHTTP(writer, req)
 			//http.Redirect(writer, req, redirectUrl, 301)
