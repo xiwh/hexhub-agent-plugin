@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	uuid "github.com/satori/go.uuid"
+	"github.com/vulcand/oxy/forward"
+	"github.com/vulcand/oxy/testutils"
 	"github.com/wonderivan/logger"
 	"github.com/xiwh/gaydev-agent-plugin/plugin"
 	"github.com/xiwh/gaydev-agent-plugin/util"
@@ -20,6 +22,7 @@ import (
 
 var Token string
 var pluginMap = make(map[string]*PluginInfo)
+var mForward *forward.Forwarder
 
 const PluginStatusNotInstalled = 0
 const PluginStatusDownloading = 1
@@ -118,7 +121,10 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 				redirectUrl = temp[idx:]
 			}
 			redirectUrl = pluginInfo.Endpoint + redirectUrl
-			http.Redirect(writer, req, redirectUrl, 301)
+			req.URL = testutils.ParseURI(redirectUrl)
+			req.Header.Add("Token", Token)
+			mForward.ServeHTTP(writer, req)
+			//http.Redirect(writer, req, redirectUrl, 301)
 			return
 		}
 		writer.WriteHeader(404)
@@ -136,6 +142,8 @@ func Start() {
 	for _, manifest := range manifests {
 		initManifest(manifest)
 	}
+	// Forwards incoming requests to whatever location URL points to, adds proper forwarding headers
+	mForward, _ = forward.New()
 	logger.Error(http.ListenAndServe(plugin.AgentAddr, new(MasterRoute)))
 }
 
