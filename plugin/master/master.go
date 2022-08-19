@@ -17,11 +17,12 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
 var Token string
-var pluginMap = make(map[string]*PluginInfo)
+var pluginMap = sync.Map{}
 var mForward *forward.Forwarder
 
 const PluginStatusNotInstalled = 0
@@ -114,7 +115,8 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 		} else {
 			pluginId = temp[0:]
 		}
-		pluginInfo, ok := pluginMap[pluginId]
+		pluginInfoTemp, ok := pluginMap.Load(pluginId)
+		pluginInfo := pluginInfoTemp.(*PluginInfo)
 		if ok && pluginInfo.Status == PluginStatusStarted && pluginInfo.Endpoint != "" {
 			redirectUrl := ""
 			if idx != -1 {
@@ -148,7 +150,8 @@ func Start() {
 }
 
 func initManifest(manifest plugin.Manifest) *PluginInfo {
-	pluginInfo, ok := pluginMap[manifest.Id]
+	pluginInfoTemp, ok := pluginMap.Load(manifest.Id)
+	pluginInfo := pluginInfoTemp.(*PluginInfo)
 	if ok {
 		pluginInfo.Version = manifest.Version
 		pluginInfo.VersionName = manifest.VersionName
@@ -171,7 +174,7 @@ func initManifest(manifest plugin.Manifest) *PluginInfo {
 			PluginDir:       strings.Join([]string{plugin.PluginDir, string(os.PathSeparator), manifest.Id}, ""),
 			Ctx:             nil,
 		}
-		pluginMap[manifest.Id] = pluginInfo
+		pluginMap.Store(manifest.Id, pluginInfo)
 	}
 	return pluginInfo
 }
@@ -186,7 +189,8 @@ func RestartPlugin(pluginId string) error {
 }
 
 func StopPlugin(pluginId string) error {
-	pluginInfo, ok := pluginMap[pluginId]
+	pluginInfoTemp, ok := pluginMap.Load(pluginId)
+	pluginInfo := pluginInfoTemp.(*PluginInfo)
 	if ok && pluginInfo.Ctx != nil {
 		_, cancelFunc := context.WithCancel(pluginInfo.Ctx)
 		cancelFunc()
@@ -277,7 +281,8 @@ func run(ctx context.Context, pluginInfo *PluginInfo) {
 }
 
 func Post(pluginId string, uri string, req any, result any) error {
-	pluginInfo, ok := pluginMap[pluginId]
+	pluginInfoTemp, ok := pluginMap.Load(pluginId)
+	pluginInfo := pluginInfoTemp.(*PluginInfo)
 	if !ok {
 		return fmt.Errorf("pluginInfo %s does not exist", pluginId)
 	}
