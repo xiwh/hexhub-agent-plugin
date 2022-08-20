@@ -116,18 +116,20 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 			pluginId = temp[0:]
 		}
 		pluginInfoTemp, ok := pluginMap.Load(pluginId)
-		pluginInfo := pluginInfoTemp.(*PluginInfo)
-		if ok && pluginInfo.Status == PluginStatusStarted && pluginInfo.Endpoint != "" {
-			redirectUrl := ""
-			if idx != -1 {
-				redirectUrl = temp[idx:]
+		if ok {
+			pluginInfo := pluginInfoTemp.(*PluginInfo)
+			if pluginInfo.Status == PluginStatusStarted && pluginInfo.Endpoint != "" {
+				redirectUrl := ""
+				if idx != -1 {
+					redirectUrl = temp[idx:]
+				}
+				req.URL = testutils.ParseURI(pluginInfo.Endpoint)
+				req.RequestURI = redirectUrl
+				req.Header.Add("Token", Token)
+				mForward.ServeHTTP(writer, req)
+				//http.Redirect(writer, req, redirectUrl, 301)
+				return
 			}
-			req.URL = testutils.ParseURI(pluginInfo.Endpoint)
-			req.RequestURI = redirectUrl
-			req.Header.Add("Token", Token)
-			mForward.ServeHTTP(writer, req)
-			//http.Redirect(writer, req, redirectUrl, 301)
-			return
 		}
 		writer.WriteHeader(404)
 	}
@@ -151,8 +153,9 @@ func Start() {
 
 func initManifest(manifest plugin.Manifest) *PluginInfo {
 	pluginInfoTemp, ok := pluginMap.Load(manifest.Id)
-	pluginInfo := pluginInfoTemp.(*PluginInfo)
+	var pluginInfo *PluginInfo
 	if ok {
+		pluginInfo := pluginInfoTemp.(*PluginInfo)
 		pluginInfo.Version = manifest.Version
 		pluginInfo.VersionName = manifest.VersionName
 		pluginInfo.ExecCommand = manifest.ExecCommand
@@ -190,12 +193,15 @@ func RestartPlugin(pluginId string) error {
 
 func StopPlugin(pluginId string) error {
 	pluginInfoTemp, ok := pluginMap.Load(pluginId)
-	pluginInfo := pluginInfoTemp.(*PluginInfo)
-	if ok && pluginInfo.Ctx != nil {
-		_, cancelFunc := context.WithCancel(pluginInfo.Ctx)
-		cancelFunc()
-		return nil
+	if ok {
+		pluginInfo := pluginInfoTemp.(*PluginInfo)
+		if pluginInfo.Ctx != nil {
+			_, cancelFunc := context.WithCancel(pluginInfo.Ctx)
+			cancelFunc()
+			return nil
+		}
 	}
+
 	return fmt.Errorf("plugin %s is not started", pluginId)
 }
 
@@ -281,11 +287,13 @@ func run(ctx context.Context, pluginInfo *PluginInfo) {
 }
 
 func Post(pluginId string, uri string, req any, result any) error {
+	var pluginInfo *PluginInfo
 	pluginInfoTemp, ok := pluginMap.Load(pluginId)
-	pluginInfo := pluginInfoTemp.(*PluginInfo)
 	if !ok {
 		return fmt.Errorf("pluginInfo %s does not exist", pluginId)
 	}
+
+	pluginInfo = pluginInfoTemp.(*PluginInfo)
 
 	if pluginInfo.Status != PluginStatusStarted {
 		return fmt.Errorf("pluginInfo %s not started", pluginId)
