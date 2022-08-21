@@ -45,7 +45,7 @@ func Start(pluginId string) {
 	if err != nil {
 		panic(err)
 	}
-	println(listener.Addr())
+	logger.Info(listener.Addr().String())
 	mThisEndpoint = fmt.Sprintf("http://127.0.0.1:%d", listener.Addr().(*net.TCPAddr).Port)
 	registerPlugin()
 	RegisterRoute("/kill", func(writer http.ResponseWriter, request *http.Request) {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	cmap "github.com/orcaman/concurrent-map/v2"
 	uuid "github.com/satori/go.uuid"
 	"github.com/vulcand/oxy/forward"
 	"github.com/vulcand/oxy/testutils"
@@ -17,12 +18,11 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 )
 
 var Token string
-var pluginMap = sync.Map{}
+var pluginMap = cmap.New[*PluginInfo]()
 var mForward *forward.Forwarder
 
 const PluginStatusNotInstalled = 0
@@ -58,7 +58,6 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 	case "":
 	case "/":
 	case "/ping":
-		println("master ping")
 		writer.WriteHeader(200)
 		_, err := writer.Write([]byte("ok"))
 		if err != nil {
@@ -115,9 +114,8 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 		} else {
 			pluginId = temp[0:]
 		}
-		pluginInfoTemp, ok := pluginMap.Load(pluginId)
+		pluginInfo, ok := pluginMap.Get(pluginId)
 		if ok {
-			pluginInfo := pluginInfoTemp.(*PluginInfo)
 			if pluginInfo.Status == PluginStatusStarted && pluginInfo.Endpoint != "" {
 				redirectUrl := ""
 				if idx != -1 {
@@ -152,10 +150,8 @@ func Start() {
 }
 
 func initManifest(manifest plugin.Manifest) *PluginInfo {
-	pluginInfoTemp, ok := pluginMap.Load(manifest.Id)
-	var pluginInfo *PluginInfo
+	pluginInfo, ok := pluginMap.Get(manifest.Id)
 	if ok {
-		pluginInfo := pluginInfoTemp.(*PluginInfo)
 		pluginInfo.Version = manifest.Version
 		pluginInfo.VersionName = manifest.VersionName
 		pluginInfo.ExecCommand = manifest.ExecCommand
@@ -177,7 +173,7 @@ func initManifest(manifest plugin.Manifest) *PluginInfo {
 			PluginDir:       strings.Join([]string{plugin.PluginDir, string(os.PathSeparator), manifest.Id}, ""),
 			Ctx:             nil,
 		}
-		pluginMap.Store(manifest.Id, pluginInfo)
+		pluginMap.Set(manifest.Id, pluginInfo)
 	}
 	return pluginInfo
 }
@@ -192,9 +188,8 @@ func RestartPlugin(pluginId string) error {
 }
 
 func StopPlugin(pluginId string) error {
-	pluginInfoTemp, ok := pluginMap.Load(pluginId)
+	pluginInfo, ok := pluginMap.Get(pluginId)
 	if ok {
-		pluginInfo := pluginInfoTemp.(*PluginInfo)
 		if pluginInfo.Ctx != nil {
 			_, cancelFunc := context.WithCancel(pluginInfo.Ctx)
 			cancelFunc()
@@ -288,12 +283,10 @@ func run(ctx context.Context, pluginInfo *PluginInfo) {
 
 func Post(pluginId string, uri string, req any, result any) error {
 	var pluginInfo *PluginInfo
-	pluginInfoTemp, ok := pluginMap.Load(pluginId)
+	pluginInfo, ok := pluginMap.Get(pluginId)
 	if !ok {
 		return fmt.Errorf("pluginInfo %s does not exist", pluginId)
 	}
-
-	pluginInfo = pluginInfoTemp.(*PluginInfo)
 
 	if pluginInfo.Status != PluginStatusStarted {
 		return fmt.Errorf("pluginInfo %s not started", pluginId)
