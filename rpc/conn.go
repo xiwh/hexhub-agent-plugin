@@ -23,11 +23,14 @@ func NewConn(wsConn *websocket.Conn, ctx context.Context) Conn {
 		id:           0xffffffff,
 	}
 	go func() {
-		<-ctx.Done()
-		if v.err != nil {
-			v.triggerClose(v.err)
-		} else {
-			v.triggerClose(ctx.Err())
+		if v.isClosed {
+			return
+		}
+		time.Sleep(time.Second * 2)
+		err := wsConn.Ping(ctx)
+		if err != nil {
+			v.triggerClose(err)
+			return
 		}
 	}()
 
@@ -113,16 +116,16 @@ func (t *conn) Read() (packet.Packet, error) {
 }
 
 func (t *conn) Send(method string, v any) error {
-	miuns := int32(-1)
-	uMinuns := uint32(miuns)
-	atomic.AddUint32(&t.id, uMinuns)
+	minus := int32(-1)
+	uMinus := uint32(minus)
+	atomic.AddUint32(&t.id, uMinus)
 	return t._send(method, t.id, v)
 }
 
 func (t *conn) SendWaitReply(method string, v any, f func(timeout bool, packet packet.Packet)) error {
-	miuns := int32(-1)
-	uMinuns := uint32(miuns)
-	atomic.AddUint32(&t.id, uMinuns)
+	minus := int32(-1)
+	uMinus := uint32(minus)
+	atomic.AddUint32(&t.id, uMinus)
 	err := t._send(method, t.id, v)
 	if err != nil {
 		t.replyFuncMap.Set(strconv.FormatInt(int64(t.id), 32), reply{
@@ -149,6 +152,7 @@ func (t *conn) Close(err error) error {
 	if t.isClosed {
 		return errors.New("conn is closed")
 	}
+	t.triggerClose(err)
 	return t.wsConn.Close(1000, err.Error())
 }
 
@@ -178,6 +182,10 @@ func (t *conn) _send(method string, id uint32, v any) error {
 func (t *conn) triggerClose(err error) {
 	if !t.isClosed {
 		t.isClosed = true
+		defer func() {
+			_, cancelFunc := context.WithCancel(t.ctx)
+			cancelFunc()
+		}()
 		if t.closeFunc != nil {
 			t.closeFunc(t, err)
 		}
