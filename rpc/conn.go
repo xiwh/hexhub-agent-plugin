@@ -5,6 +5,7 @@ import (
 	"errors"
 	cmap "github.com/orcaman/concurrent-map/v2"
 	"github.com/xiwh/gaydev-agent-plugin/rpc/packet"
+	"math"
 	"nhooyr.io/websocket"
 	"strconv"
 	"sync/atomic"
@@ -21,12 +22,13 @@ func NewConn(wsConn *websocket.Conn, ctx context.Context) Conn {
 		closeFunc:    nil,
 		ctx:          ctx,
 		id:           0xffffffff,
+		ch:           make(chan uint8, 128),
 	}
 	go func() {
 		if v.isClosed {
 			return
 		}
-		time.Sleep(time.Second * 2)
+		time.Sleep(time.Millisecond * 350)
 		err := wsConn.Ping(ctx)
 		if err != nil {
 			v.triggerClose(err)
@@ -38,10 +40,10 @@ func NewConn(wsConn *websocket.Conn, ctx context.Context) Conn {
 }
 
 type Conn interface {
-	StartHandler(timeout int) error
+	StartHandler() error
 	Read() (packet.Packet, error)
 	Send(method string, v any) error
-	SendWaitReply(method string, v any, f func(timeout bool, packet packet.Packet)) error
+	SendWaitReply(method string, v any, timeout int64, f func(timeout bool, packet packet.Packet)) error
 	Reply(method string, v any, packet packet.Packet) error
 	Session() cmap.ConcurrentMap[any]
 	IsClosed() bool
@@ -65,14 +67,14 @@ type conn struct {
 	closeFunc    func(conn Conn, reason error)
 	ctx          context.Context
 	id           uint32
-	timeout      int64
 	err          error
+	ch           chan uint8
 }
 
-func (t *conn) StartHandler(timeout int) error {
-	t.timeout = int64(timeout)
+func (t *conn) StartHandler() error {
 	go func() {
 		if !t.isClosed {
+			<-t.ch
 			time.Sleep(time.Second)
 			now := time.Now().Unix()
 			t.replyFuncMap.IterCb(func(key string, v reply) {
@@ -122,16 +124,21 @@ func (t *conn) Send(method string, v any) error {
 	return t._send(method, t.id, v)
 }
 
-func (t *conn) SendWaitReply(method string, v any, f func(timeout bool, packet packet.Packet)) error {
+func (t *conn) SendWaitReply(method string, v any, timeout int64, f func(timeout bool, packet packet.Packet)) error {
 	minus := int32(-1)
 	uMinus := uint32(minus)
 	atomic.AddUint32(&t.id, uMinus)
 	err := t._send(method, t.id, v)
-	if err != nil {
+	if err == nil {
+		var expire int64 = math.MaxInt64
+		if timeout > 0 {
+			expire = time.Now().Unix() + timeout
+		}
 		t.replyFuncMap.Set(strconv.FormatInt(int64(t.id), 32), reply{
 			f:    f,
-			time: time.Now().Unix() + t.timeout,
+			time: expire,
 		})
+		t.ch <- 1
 	}
 	return err
 }
@@ -182,6 +189,7 @@ func (t *conn) _send(method string, id uint32, v any) error {
 func (t *conn) triggerClose(err error) {
 	if !t.isClosed {
 		t.isClosed = true
+		close(t.ch)
 		defer func() {
 			_, cancelFunc := context.WithCancel(t.ctx)
 			cancelFunc()
