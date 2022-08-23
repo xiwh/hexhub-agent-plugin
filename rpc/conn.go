@@ -22,19 +22,7 @@ func NewConn(wsConn *websocket.Conn, ctx context.Context) Conn {
 		closeFunc:    nil,
 		ctx:          ctx,
 		id:           0xffffffff,
-		ch:           make(chan uint8, 128),
 	}
-	go func() {
-		if v.isClosed {
-			return
-		}
-		time.Sleep(time.Millisecond * 350)
-		err := wsConn.Ping(ctx)
-		if err != nil {
-			v.triggerClose(err)
-			return
-		}
-	}()
 
 	return v
 }
@@ -68,14 +56,20 @@ type conn struct {
 	ctx          context.Context
 	id           uint32
 	err          error
-	ch           chan uint8
 }
 
 func (t *conn) StartHandler() error {
 	go func() {
-		if !t.isClosed {
-			<-t.ch
+		for true {
+			if t.isClosed {
+				return
+			}
 			time.Sleep(time.Second)
+			err := t.wsConn.Ping(t.ctx)
+			if err != nil {
+				t.triggerClose(err)
+				return
+			}
 			now := time.Now().Unix()
 			t.replyFuncMap.IterCb(func(key string, v reply) {
 				if now >= v.time {
@@ -138,7 +132,6 @@ func (t *conn) SendWaitReply(method string, v any, timeout int64, f func(timeout
 			f:    f,
 			time: expire,
 		})
-		t.ch <- 1
 	}
 	return err
 }
@@ -189,7 +182,6 @@ func (t *conn) _send(method string, id uint32, v any) error {
 func (t *conn) triggerClose(err error) {
 	if !t.isClosed {
 		t.isClosed = true
-		close(t.ch)
 		defer func() {
 			_, cancelFunc := context.WithCancel(t.ctx)
 			cancelFunc()
