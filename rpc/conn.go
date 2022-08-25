@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	cmap "github.com/orcaman/concurrent-map/v2"
+	"github.com/wonderivan/logger"
+	"github.com/xiwh/gaydev-agent-plugin/rpc/channel"
 	"github.com/xiwh/gaydev-agent-plugin/rpc/packet"
 	"math"
 	"nhooyr.io/websocket"
@@ -19,18 +21,21 @@ func NewConn(wsConn *websocket.Conn, ctx context.Context) Conn {
 		session:      cmap.New[any](),
 		handleMap:    cmap.New[func(conn Conn, packet packet.Packet)](),
 		replyFuncMap: cmap.New[reply](),
+		channelMap:   cmap.New[*channel.Channel](),
 		closeFunc:    nil,
 		ctx:          ctx,
 		id:           0xffffffff,
 	}
-
 	return v
 }
 
 type Conn interface {
 	StartHandler() error
+	OpenChannel(method string, v any) (*channel.Channel, error)
+	ListenChannel(listen func(conn Conn, p packet.Packet) (*channel.Channel, error))
 	Read() (packet.Packet, error)
-	Send(method string, v any) error
+	Send(method string, v any) (uint32, error)
+	SendSpecifyId(method string, id uint32, v any) error
 	SendWaitReply(method string, v any, timeout int64, f func(timeout bool, packet packet.Packet)) error
 	Reply(method string, v any, packet packet.Packet) error
 	Session() cmap.ConcurrentMap[any]
@@ -47,15 +52,17 @@ type reply struct {
 }
 
 type conn struct {
-	wsConn       *websocket.Conn
-	isClosed     bool
-	session      cmap.ConcurrentMap[any]
-	handleMap    cmap.ConcurrentMap[func(conn Conn, packet packet.Packet)]
-	replyFuncMap cmap.ConcurrentMap[reply]
-	closeFunc    func(conn Conn, reason error)
-	ctx          context.Context
-	id           uint32
-	err          error
+	wsConn        *websocket.Conn
+	isClosed      bool
+	session       cmap.ConcurrentMap[any]
+	handleMap     cmap.ConcurrentMap[func(conn Conn, packet packet.Packet)]
+	channelMap    cmap.ConcurrentMap[*channel.Channel]
+	replyFuncMap  cmap.ConcurrentMap[reply]
+	closeFunc     func(conn Conn, reason error)
+	listenChannel func(conn Conn, p packet.Packet) (*channel.Channel, error)
+	ctx           context.Context
+	id            uint32
+	err           error
 }
 
 func (t *conn) StartHandler() error {
@@ -85,18 +92,62 @@ func (t *conn) StartHandler() error {
 			_ = t.Close(err)
 			return err
 		} else {
-			reply, ok := t.replyFuncMap.Get(strconv.FormatInt(int64(p.Id()), 32))
-			if ok {
-				reply.f(false, p)
-			} else {
-				methodFunc, ok := t.handleMap.Get(p.Method())
+			if p.Method() == channel.ChannelMethodOpen {
+				channelData, ok := t.channelMap.Get(strconv.FormatInt(int64(t.id), 32))
 				if ok {
-					methodFunc(t, p)
+					channelData.OnOpen()
+				} else if t.listenChannel != nil {
+					listenChannel, err := t.listenChannel(t, p)
+					if err != nil {
+						logger.Error(err)
+					} else {
+						listenChannel.OnOpen()
+					}
+				}
+			} else if p.Method() == channel.ChannelMethodClose {
+				channelData, ok := t.channelMap.Get(strconv.FormatInt(int64(t.id), 32))
+				if ok {
+					err := channelData.Close(p.String())
+					if err != nil {
+						logger.Error(err)
+					}
+				}
+			} else if p.Method() == channel.ChannelMethodSend {
+				channelData, ok := t.channelMap.Get(strconv.FormatInt(int64(t.id), 32))
+				if ok {
+					err := channelData.Receive(p)
+					if err != nil {
+						logger.Error(err)
+					}
+				}
+			} else {
+				reply, ok := t.replyFuncMap.Get(strconv.FormatInt(int64(p.Id()), 32))
+				if ok {
+					reply.f(false, p)
+				} else {
+					methodFunc, ok := t.handleMap.Get(p.Method())
+					if ok {
+						methodFunc(t, p)
+					}
 				}
 			}
 		}
 	}
 	return nil
+}
+
+func (t *conn) OpenChannel(method string, v any) (*channel.Channel, error) {
+	openChannel, err := channel.OpenChannel(t, method, v, func(channel *channel.Channel) {
+		t.channelMap.Remove(channel.IdString())
+	})
+	if err != nil {
+		return nil, err
+	}
+	t.channelMap.Set(openChannel.IdString(), openChannel)
+	return openChannel, nil
+}
+func (t *conn) ListenChannel(listen func(conn Conn, p packet.Packet) (*channel.Channel, error)) {
+	t.listenChannel = listen
 }
 
 func (t *conn) Read() (packet.Packet, error) {
@@ -111,18 +162,18 @@ func (t *conn) Read() (packet.Packet, error) {
 	return packet.DecodePacket(b)
 }
 
-func (t *conn) Send(method string, v any) error {
+func (t *conn) Send(method string, v any) (uint32, error) {
 	minus := int32(-1)
 	uMinus := uint32(minus)
 	atomic.AddUint32(&t.id, uMinus)
-	return t._send(method, t.id, v)
+	return t.id, t.SendSpecifyId(method, t.id, v)
 }
 
 func (t *conn) SendWaitReply(method string, v any, timeout int64, f func(timeout bool, packet packet.Packet)) error {
 	minus := int32(-1)
 	uMinus := uint32(minus)
 	atomic.AddUint32(&t.id, uMinus)
-	err := t._send(method, t.id, v)
+	err := t.SendSpecifyId(method, t.id, v)
 	if err == nil {
 		var expire int64 = math.MaxInt64
 		if timeout > 0 {
@@ -137,7 +188,7 @@ func (t *conn) SendWaitReply(method string, v any, timeout int64, f func(timeout
 }
 
 func (t *conn) Reply(method string, v any, packet packet.Packet) error {
-	return t._send(method, packet.Id(), v)
+	return t.SendSpecifyId(method, packet.Id(), v)
 }
 
 func (t *conn) Session() cmap.ConcurrentMap[any] {
@@ -168,7 +219,7 @@ func (t *conn) Ctx() context.Context {
 	return t.ctx
 }
 
-func (t *conn) _send(method string, id uint32, v any) error {
+func (t *conn) SendSpecifyId(method string, id uint32, v any) error {
 	if t.isClosed {
 		return errors.New("conn is closed")
 	}

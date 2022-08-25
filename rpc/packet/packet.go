@@ -67,6 +67,8 @@ func DecodePacket(bytes []byte) (packet Packet, err error) {
 func CreatePacket(method string, id uint32, v any) (Packet, error) {
 	var dataBytes []byte
 	switch v.(type) {
+	case Packet:
+		dataBytes = EncodePacket(v.(Packet))
 	case string:
 		dataBytes = []byte(v.(string))
 	case []byte:
