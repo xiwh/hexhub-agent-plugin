@@ -5,7 +5,6 @@ import (
 	"errors"
 	cmap "github.com/orcaman/concurrent-map/v2"
 	"github.com/wonderivan/logger"
-	"github.com/xiwh/gaydev-agent-plugin/rpc/channel"
 	"github.com/xiwh/gaydev-agent-plugin/rpc/packet"
 	"math"
 	"nhooyr.io/websocket"
@@ -21,7 +20,7 @@ func NewConn(wsConn *websocket.Conn, ctx context.Context) Conn {
 		session:      cmap.New[any](),
 		handleMap:    cmap.New[func(conn Conn, packet packet.Packet)](),
 		replyFuncMap: cmap.New[reply](),
-		channelMap:   cmap.New[*channel.Channel](),
+		channelMap:   cmap.New[*Channel](),
 		closeFunc:    nil,
 		ctx:          ctx,
 		id:           0xffffffff,
@@ -31,8 +30,8 @@ func NewConn(wsConn *websocket.Conn, ctx context.Context) Conn {
 
 type Conn interface {
 	StartHandler() error
-	OpenChannel(method string, v any) (*channel.Channel, error)
-	ListenChannel(listen func(conn Conn, p packet.Packet) (*channel.Channel, error))
+	OpenChannel(method string, v any) (*Channel, error)
+	ListenChannel(listen func(conn Conn, p packet.Packet) (*Channel, error))
 	Read() (packet.Packet, error)
 	Send(method string, v any) (uint32, error)
 	SendSpecifyId(method string, id uint32, v any) error
@@ -56,10 +55,10 @@ type conn struct {
 	isClosed      bool
 	session       cmap.ConcurrentMap[any]
 	handleMap     cmap.ConcurrentMap[func(conn Conn, packet packet.Packet)]
-	channelMap    cmap.ConcurrentMap[*channel.Channel]
+	channelMap    cmap.ConcurrentMap[*Channel]
 	replyFuncMap  cmap.ConcurrentMap[reply]
 	closeFunc     func(conn Conn, reason error)
-	listenChannel func(conn Conn, p packet.Packet) (*channel.Channel, error)
+	listenChannel func(conn Conn, p packet.Packet) (*Channel, error)
 	ctx           context.Context
 	id            uint32
 	err           error
@@ -92,7 +91,7 @@ func (t *conn) StartHandler() error {
 			_ = t.Close(err)
 			return err
 		} else {
-			if p.Method() == channel.ChannelMethodOpen {
+			if p.Method() == ChannelMethodOpen {
 				channelData, ok := t.channelMap.Get(strconv.FormatInt(int64(t.id), 32))
 				if ok {
 					channelData.OnOpen()
@@ -104,7 +103,7 @@ func (t *conn) StartHandler() error {
 						listenChannel.OnOpen()
 					}
 				}
-			} else if p.Method() == channel.ChannelMethodClose {
+			} else if p.Method() == ChannelMethodClose {
 				channelData, ok := t.channelMap.Get(strconv.FormatInt(int64(t.id), 32))
 				if ok {
 					err := channelData.Close(p.String())
@@ -112,7 +111,7 @@ func (t *conn) StartHandler() error {
 						logger.Error(err)
 					}
 				}
-			} else if p.Method() == channel.ChannelMethodSend {
+			} else if p.Method() == ChannelMethodSend {
 				channelData, ok := t.channelMap.Get(strconv.FormatInt(int64(t.id), 32))
 				if ok {
 					err := channelData.Receive(p)
@@ -136,8 +135,8 @@ func (t *conn) StartHandler() error {
 	return nil
 }
 
-func (t *conn) OpenChannel(method string, v any) (*channel.Channel, error) {
-	openChannel, err := channel.OpenChannel(t, method, v, func(channel *channel.Channel) {
+func (t *conn) OpenChannel(method string, v any) (*Channel, error) {
+	openChannel, err := OpenChannel(t, method, v, func(channel *Channel) {
 		t.channelMap.Remove(channel.IdString())
 	})
 	if err != nil {
@@ -146,7 +145,7 @@ func (t *conn) OpenChannel(method string, v any) (*channel.Channel, error) {
 	t.channelMap.Set(openChannel.IdString(), openChannel)
 	return openChannel, nil
 }
-func (t *conn) ListenChannel(listen func(conn Conn, p packet.Packet) (*channel.Channel, error)) {
+func (t *conn) ListenChannel(listen func(conn Conn, p packet.Packet) (*Channel, error)) {
 	t.listenChannel = listen
 }
 
