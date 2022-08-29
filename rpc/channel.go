@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"context"
 	"errors"
 	"github.com/xiwh/gaydev-agent-plugin/rpc/packet"
 	"strconv"
@@ -12,39 +13,28 @@ const ChannelMethodSend = "ChannelSend"
 const ChannelMethodClose = "ChannelClose"
 
 type Channel struct {
+	method          string
 	mId             uint32
 	ch              chan any
 	conn            Conn
 	channelIdSerial uint32
 	isOpen          bool
-	isClose         bool
-	onClose         func(channel *Channel)
+	ctx             context.Context
 }
 
-func openChannel(rpcConn Conn, method string, v any) (*Channel, error) {
-	openPacket, err := packet.CreatePacket(method, 0, v)
-	if err != nil {
-		return nil, err
-	}
-	id, err := rpcConn.Send(ChannelMethodOpen, openPacket)
-	if err != nil {
-		return nil, err
-	}
+func newChannel(rpcConn Conn, id uint32, method string, ctx context.Context) (*Channel, error) {
 	return &Channel{
+		method:          method,
 		mId:             id,
 		ch:              make(chan any, 4),
 		conn:            rpcConn,
 		isOpen:          false,
-		isClose:         false,
 		channelIdSerial: 0,
+		ctx:             ctx,
 	}, nil
 }
 
-func (t Channel) ListenClose(f func(channel *Channel)) {
-	t.onClose = f
-}
-
-func (t *Channel) IdString() string {
+func (t *Channel) idString() string {
 	return strconv.FormatInt(int64(t.mId), 32)
 }
 
@@ -53,18 +43,18 @@ func (t *Channel) Id() uint32 {
 }
 
 func (t *Channel) IsClosed() bool {
-	return t.isClose
+	return t.ctx.Err() != nil
 }
 
-func (t *Channel) OnOpen() {
-	t.isClose = true
+func (t *Channel) onOpen() {
+	t.isOpen = true
 }
 
 func (t *Channel) Close(reason string) error {
 	t.isOpen = false
-	t.isClose = true
 	close(t.ch)
-	t.onClose(t)
+	_, cancel := context.WithCancel(t.ctx)
+	defer cancel()
 	return t.conn.SendSpecifyId(ChannelMethodClose, t.mId, reason)
 }
 

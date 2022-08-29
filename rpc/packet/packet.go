@@ -28,6 +28,10 @@ func (t Packet) String() string {
 	return string(t.mBytes)
 }
 
+func (t Packet) SubPacket() (Packet, error) {
+	return DecodePacket(t.mBytes)
+}
+
 func (t Packet) Bytes() []byte {
 	return t.mBytes
 }
