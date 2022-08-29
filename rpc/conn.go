@@ -1,11 +1,13 @@
 package rpc
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	cmap "github.com/orcaman/concurrent-map/v2"
 	"github.com/wonderivan/logger"
 	"github.com/xiwh/gaydev-agent-plugin/rpc/packet"
+	"github.com/xiwh/gaydev-agent-plugin/util/buf"
 	"math"
 	"nhooyr.io/websocket"
 	"strconv"
@@ -25,6 +27,7 @@ func NewConn(wsConn *websocket.Conn, ctx context.Context) Conn {
 		closeFunc:         nil,
 		ctx:               ctx,
 		id:                0xffffffff,
+		readBuf:           bytes.NewBuffer(make([]byte, 0xffff+packet.PacketHeadBytes)),
 	}
 	return v
 }
@@ -63,6 +66,7 @@ type conn struct {
 	ctx               context.Context
 	id                uint32
 	err               error
+	readBuf           *bytes.Buffer
 }
 
 func (t *conn) StartHandler() error {
@@ -191,7 +195,30 @@ func (t *conn) Read() (packet.Packet, error) {
 	if err != nil {
 		return p, err
 	}
-	return packet.DecodePacket(b)
+	bufUtil := buf.Create(b)
+	methodBytes, _, err := bufUtil.ReadUInt16()
+	if err != nil {
+		return p, err
+	}
+	dataBytes, _, err := bufUtil.ReadUInt16()
+	if err != nil {
+		return p, err
+	}
+	expectedBytes := int(packet.PacketHeadBytes + methodBytes + dataBytes)
+	t.readBuf.Write(b)
+	for t.readBuf.Len() < expectedBytes {
+		_, b, err = t.wsConn.Read(t.ctx)
+		if err != nil {
+			return p, err
+		}
+		t.readBuf.Write(b)
+	}
+	temp := make([]byte, expectedBytes)
+	_, err = t.readBuf.Read(temp)
+	if err != nil {
+		return packet.Packet{}, err
+	}
+	return packet.DecodePacket(temp)
 }
 
 func (t *conn) Send(method string, v any) (uint32, error) {
