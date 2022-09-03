@@ -6,8 +6,6 @@ import (
 	"github.com/xiwh/gaydev-agent-plugin/util/buf"
 )
 
-const PacketHeadBytes = 8
-
 type Packet struct {
 	method string
 	mId    uint32
@@ -48,7 +46,7 @@ func DecodePacket(bytes []byte) (packet Packet, err error) {
 	if err != nil {
 		return packet, err
 	}
-	dataLen, _, err := b.ReadUInt16()
+	dataLen, _, err := b.ReadUInt32()
 	if err != nil {
 		return packet, err
 	}
@@ -107,7 +105,7 @@ func EncodePacket(packet Packet) []byte {
 	data := buf.CreateBySize(10 + len(packet.mBytes))
 	methodBytes := []byte(packet.method)
 	data.WriteUInt16(uint16(len(methodBytes)))
-	data.WriteUInt16(uint16(len(packet.mBytes)))
+	data.WriteUInt32(uint32(len(packet.mBytes)))
 	data.WriteUInt32(packet.mId)
 	data.WriteBytes(methodBytes)
 	data.WriteBytes(packet.mBytes)
