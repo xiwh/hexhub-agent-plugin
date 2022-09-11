@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+var ConnClosedError = errors.New("conn is closed")
+
 func NewConn(wsConn *websocket.Conn, ctx context.Context) Conn {
 	v := &conn{
 		wsConn:            wsConn,
@@ -195,7 +197,7 @@ func (t *conn) AcceptChannel() (packet.Packet, *Channel, error) {
 func (t *conn) Read() (packet.Packet, error) {
 	var p packet.Packet
 	if t.isClosed {
-		return p, errors.New("conn is closed")
+		return p, ConnClosedError
 	}
 	_, b, err := t.wsConn.Read(t.ctx)
 	if err != nil {
@@ -243,7 +245,7 @@ func (t *conn) IsClosed() bool {
 
 func (t *conn) Close(err error) error {
 	if t.isClosed {
-		return errors.New("conn is closed")
+		return ConnClosedError
 	}
 	t.triggerClose(err)
 	defer func() {
@@ -272,7 +274,7 @@ func (t *conn) Ctx() context.Context {
 
 func (t *conn) SendSpecifyId(method string, id uint32, v any) error {
 	if t.isClosed {
-		return errors.New("conn is closed")
+		return ConnClosedError
 	}
 	bytes, err := packet.Encode(method, id, v)
 	if err != nil {

@@ -16,6 +16,8 @@ const CloseNormal = 0
 const CloseFailure = 1
 const CloseInterrupt = 2
 
+var ChannelClosedError = errors.New("channel is closed")
+
 type Channel struct {
 	method          string
 	mId             uint32
@@ -72,7 +74,7 @@ func (t *Channel) Close(code int, reason string) error {
 
 func (t *Channel) Read() (packet.Packet, error) {
 	if t.IsClosed() {
-		return packet.Packet{}, errors.New("channel is closed")
+		return packet.Packet{}, ChannelClosedError
 	}
 	v := <-t.ch
 	switch v.(type) {
@@ -84,7 +86,7 @@ func (t *Channel) Read() (packet.Packet, error) {
 
 func (t *Channel) Receive(data any) error {
 	if t.IsClosed() {
-		return errors.New("channel is closed")
+		return ChannelClosedError
 	}
 	t.ch <- data
 	return nil
@@ -92,7 +94,7 @@ func (t *Channel) Receive(data any) error {
 
 func (t *Channel) Send(v any) error {
 	if t.IsClosed() {
-		return errors.New("channel is closed")
+		return ChannelClosedError
 	}
 	atomic.AddUint32(&t.channelIdSerial, 1)
 	return t.conn.SendSpecifyId(ChannelMethodSend, t.mId, v)
