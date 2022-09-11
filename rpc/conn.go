@@ -102,7 +102,7 @@ func (t *conn) StartHandler() error {
 			} else if p.Method() == ChannelMethodClose {
 				channelData, ok := t.channelMap.Get(strconv.FormatInt(int64(t.id), 32))
 				if ok {
-					err := channelData.Close(p.String())
+					err := channelData.Close(CloseNormal, p.String())
 					if err != nil {
 						logger.Error(err)
 					}
@@ -238,7 +238,7 @@ func (t *conn) Close(err error) error {
 	t.triggerClose(err)
 	defer func() {
 		t.channelMap.IterCb(func(k string, v *Channel) {
-			err := v.Close("rpc connection closed")
+			err := v.Close(CloseInterrupt, "rpc connection closed")
 			if err != nil {
 				logger.Error(err)
 			}

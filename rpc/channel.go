@@ -12,6 +12,10 @@ const ChannelMethodOpen = "ChannelOpen"
 const ChannelMethodSend = "ChannelSend"
 const ChannelMethodClose = "ChannelClose"
 
+const CloseNormal = 0
+const CloseFailure = 1
+const CloseInterrupt = 2
+
 type Channel struct {
 	method          string
 	mId             uint32
@@ -20,6 +24,11 @@ type Channel struct {
 	channelIdSerial uint32
 	isOpen          bool
 	ctx             context.Context
+}
+
+type CloseInfo struct {
+	Code   int    `json:"code"`
+	Reason string `json:"reason"`
 }
 
 func newChannel(rpcConn Conn, id uint32, method string, ctx context.Context) (*Channel, error) {
@@ -50,12 +59,15 @@ func (t *Channel) onOpen() {
 	t.isOpen = true
 }
 
-func (t *Channel) Close(reason string) error {
+func (t *Channel) Close(code int, reason string) error {
 	t.isOpen = false
 	close(t.ch)
 	_, cancel := context.WithCancel(t.ctx)
 	defer cancel()
-	return t.conn.SendSpecifyId(ChannelMethodClose, t.mId, reason)
+	return t.conn.SendSpecifyId(ChannelMethodClose, t.mId, CloseInfo{
+		code,
+		reason,
+	})
 }
 
 func (t *Channel) Read() (packet.Packet, error) {
