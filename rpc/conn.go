@@ -102,9 +102,19 @@ func (t *conn) StartHandler() error {
 			} else if p.Method() == ChannelMethodClose {
 				channelData, ok := t.channelMap.Get(strconv.FormatInt(int64(t.id), 32))
 				if ok {
-					err := channelData.Close(CloseNormal, p.String())
+					var closeInfo CloseInfo
+					err = p.Data(closeInfo)
 					if err != nil {
 						logger.Error(err)
+						err := channelData.Close(CloseFailure, err.Error())
+						if err != nil {
+							logger.Error(err)
+						}
+					} else {
+						err = channelData.Close(closeInfo.Code, closeInfo.Reason)
+						if err != nil {
+							logger.Error(err)
+						}
 					}
 				}
 			} else if p.Method() == ChannelMethodSend {
