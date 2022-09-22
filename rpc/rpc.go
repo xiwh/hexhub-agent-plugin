@@ -10,6 +10,7 @@ func Accept(w http.ResponseWriter, req *http.Request, ctx context.Context) (Conn
 	wsConn, err := websocket.Accept(w, req, &websocket.AcceptOptions{
 		OriginPatterns: []string{"*"},
 	})
+	wsConn.SetReadLimit(1024 * 128)
 	if err != nil {
 		return nil, err
 	}

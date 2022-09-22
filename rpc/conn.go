@@ -95,17 +95,17 @@ func (t *conn) StartHandler() error {
 			return err
 		} else {
 			if p.Method() == ChannelMethodOpen {
-				channelData, ok := t.channelMap.Get(strconv.FormatInt(int64(t.id), 32))
+				channelData, ok := t.channelMap.Get(strconv.FormatInt(int64(p.Id()), 32))
 				if ok {
 					channelData.onOpen()
 				} else {
 					t.channelAcceptChan <- p
 				}
 			} else if p.Method() == ChannelMethodClose {
-				channelData, ok := t.channelMap.Get(strconv.FormatInt(int64(t.id), 32))
+				channelData, ok := t.channelMap.Get(strconv.FormatInt(int64(p.Id()), 32))
 				if ok {
 					var closeInfo CloseInfo
-					err = p.Data(closeInfo)
+					err = p.Data(&closeInfo)
 					if err != nil {
 						logger.Error(err)
 						err := channelData.Close(CloseFailure, err.Error())
@@ -120,7 +120,7 @@ func (t *conn) StartHandler() error {
 					}
 				}
 			} else if p.Method() == ChannelMethodSend {
-				channelData, ok := t.channelMap.Get(strconv.FormatInt(int64(t.id), 32))
+				channelData, ok := t.channelMap.Get(strconv.FormatInt(int64(p.Id()), 32))
 				if ok {
 					err := channelData.Receive(p)
 					if err != nil {
@@ -167,7 +167,10 @@ func (t *conn) OpenChannel(method string, v any) (*Channel, error) {
 }
 
 func (t *conn) AcceptChannel() (packet.Packet, *Channel, error) {
-	p := <-t.channelAcceptChan
+	p, ok := <-t.channelAcceptChan
+	if !ok {
+		return packet.Packet{}, nil, ConnClosedError
+	}
 	ctx := context.Background()
 	subPacket, err := p.SubPacket()
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"github.com/xiwh/gaydev-agent-plugin/rpc/packet"
 	"strconv"
 	"sync/atomic"
+	"time"
 )
 
 const ChannelMethodOpen = "ChannelOpen"
@@ -17,6 +18,7 @@ const CloseFailure = 1
 const CloseInterrupt = 2
 
 var ChannelClosedError = errors.New("channel is closed")
+var TimeoutError = errors.New("timeout")
 
 type Channel struct {
 	method          string
@@ -25,6 +27,7 @@ type Channel struct {
 	conn            Conn
 	channelIdSerial uint32
 	isOpen          bool
+	isClosed        bool
 	ctx             context.Context
 }
 
@@ -54,7 +57,7 @@ func (t *Channel) Id() uint32 {
 }
 
 func (t *Channel) IsClosed() bool {
-	return t.ctx.Err() != nil
+	return t.isClosed
 }
 
 func (t *Channel) onOpen() {
@@ -62,7 +65,11 @@ func (t *Channel) onOpen() {
 }
 
 func (t *Channel) Close(code int, reason string) error {
+	if t.IsClosed() {
+		return nil
+	}
 	t.isOpen = false
+	t.isClosed = true
 	close(t.ch)
 	_, cancel := context.WithCancel(t.ctx)
 	defer cancel()
@@ -72,11 +79,33 @@ func (t *Channel) Close(code int, reason string) error {
 	})
 }
 
+func (t *Channel) ReadTimeout(timeout time.Duration) (packet.Packet, error) {
+	if t.IsClosed() {
+		return packet.Packet{}, ChannelClosedError
+	}
+	select {
+	case v, ok := <-t.ch:
+		if !ok {
+			return packet.Packet{}, ChannelClosedError
+		}
+		switch v.(type) {
+		case error:
+			return packet.Packet{}, v.(error)
+		}
+		return v.(packet.Packet), nil
+	case <-time.After(timeout):
+		return packet.Packet{}, TimeoutError
+	}
+}
+
 func (t *Channel) Read() (packet.Packet, error) {
 	if t.IsClosed() {
 		return packet.Packet{}, ChannelClosedError
 	}
-	v := <-t.ch
+	v, ok := <-t.ch
+	if !ok {
+		return packet.Packet{}, ChannelClosedError
+	}
 	switch v.(type) {
 	case error:
 		return packet.Packet{}, v.(error)

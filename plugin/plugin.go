@@ -18,6 +18,7 @@ var AgentAddr = "127.0.0.1:35580"
 var Debug = false
 var HomeDir string
 var PluginDir string
+var AESKey []byte
 
 type Manifest struct {
 	Id          string `json:"id"`
@@ -34,6 +35,7 @@ func SetDebug() {
 }
 
 func Init() {
+	AESKey = util.RandKey(24)
 	Debug = *flag.Bool("debug", Debug, "")
 	current, err := user.Current()
 	if err != nil {
