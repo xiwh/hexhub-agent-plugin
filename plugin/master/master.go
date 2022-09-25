@@ -12,6 +12,7 @@ import (
 	"github.com/wonderivan/logger"
 	"github.com/xiwh/gaydev-agent-plugin/plugin"
 	"github.com/xiwh/gaydev-agent-plugin/util"
+	http2 "github.com/xiwh/gaydev-agent-plugin/util/httputil"
 	"io"
 	"net/http"
 	"os"
@@ -121,11 +122,12 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 				if idx != -1 {
 					redirectUrl = temp[idx:]
 				}
+				req.Header.Add("Proxy-Url", "http://"+req.Host+req.RequestURI)
 				req.URL = testutils.ParseURI(pluginInfo.Endpoint)
 				req.RequestURI = redirectUrl
 				req.Header.Add("Token", Token)
 				mForward.ServeHTTP(writer, req)
-				//http.Redirect(writer, req, redirectUrl, 301)
+				//httputil.Redirect(writer, req, redirectUrl, 301)
 				return
 			}
 		}
@@ -213,7 +215,7 @@ func StartPlugin(pluginId string) error {
 
 func InstallPlugin(pluginId string, pluginInfo *PluginInfo) error {
 	url := "xxx"
-	path, err := util.DownloadFile(url, func(total int64, current int64) {
+	path, err := http2.DownloadFile(url, func(total int64, current int64) {
 		pluginInfo.DownloadProcess = int(current / total * 100)
 	})
 	if err != nil {

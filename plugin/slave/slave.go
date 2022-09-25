@@ -18,6 +18,10 @@ var mToken string
 var mThisEndpoint string
 var mPluginId string
 
+func GetPluginId() string {
+	return mPluginId
+}
+
 func handleInterceptor(h http.HandlerFunc) http.HandlerFunc {
 	return func(write http.ResponseWriter, req *http.Request) {
 		if !plugin.Debug {
