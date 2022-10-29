@@ -39,7 +39,11 @@ func Error(err error) Result[interface{}] {
 }
 
 func OutResult[T any](w http.ResponseWriter, result Result[T]) error {
-	w.WriteHeader(200)
+	if result.Code == ResultCodeSuccess {
+		w.WriteHeader(200)
+	} else {
+		w.WriteHeader(400)
+	}
 	b, err := json.Marshal(result)
 	if err != nil {
 		return err

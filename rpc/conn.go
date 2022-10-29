@@ -122,10 +122,10 @@ func (t *conn) StartHandler() error {
 			} else if p.Method() == ChannelMethodSend {
 				channelData, ok := t.channelMap.Get(strconv.FormatInt(int64(p.Id()), 32))
 				if ok {
-					err := channelData.Receive(p)
-					if err != nil {
-						logger.Error(err)
-					}
+					_ = channelData.Receive(p)
+					//if err != nil {
+					//	logger.Error(err)
+					//}
 				}
 			} else {
 				reply, ok := t.replyFuncMap.Get(strconv.FormatInt(int64(p.Id()), 32))

@@ -118,6 +118,14 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 		pluginInfo, ok := pluginMap.Get(pluginId)
 		if ok {
 			if pluginInfo.Status == PluginStatusStarted && pluginInfo.Endpoint != "" {
+				header := writer.Header()
+				header.Add("Access-Control-Allow-Origin", "http://localhost:3000")
+				header.Add("Access-Control-Allow-Credentials", "true")
+				header.Add("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
+				if req.Method == "OPTIONS" {
+					writer.WriteHeader(200)
+					return
+				}
 				redirectUrl := ""
 				if idx != -1 {
 					redirectUrl = temp[idx:]

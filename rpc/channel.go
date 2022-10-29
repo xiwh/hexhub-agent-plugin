@@ -56,6 +56,10 @@ func (t *Channel) Id() uint32 {
 	return t.mId
 }
 
+func (t *Channel) GetContext() context.Context {
+	return t.ctx
+}
+
 func (t *Channel) IsClosed() bool {
 	return t.isClosed
 }
@@ -70,7 +74,7 @@ func (t *Channel) Close(code int, reason string) error {
 	}
 	t.isOpen = false
 	t.isClosed = true
-	close(t.ch)
+	defer close(t.ch)
 	_, cancel := context.WithCancel(t.ctx)
 	defer cancel()
 	return t.conn.SendSpecifyId(ChannelMethodClose, t.mId, CloseInfo{
@@ -114,7 +118,7 @@ func (t *Channel) Read() (packet.Packet, error) {
 }
 
 func (t *Channel) Receive(data any) error {
-	if t.IsClosed() {
+	if t.isClosed {
 		return ChannelClosedError
 	}
 	t.ch <- data

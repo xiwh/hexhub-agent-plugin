@@ -7,16 +7,19 @@ import (
 	"fmt"
 	"github.com/wonderivan/logger"
 	"github.com/xiwh/gaydev-agent-plugin/plugin"
+	"github.com/xiwh/gaydev-agent-plugin/util"
 	"io"
 	"net"
 	"net/http"
 	"os"
+	"path"
 )
 
 var masterEndpoint string
 var mToken string
 var mThisEndpoint string
 var mPluginId string
+var createdPersistentDataDir bool
 
 func GetPluginId() string {
 	return mPluginId
@@ -148,4 +151,15 @@ func GetMasterEndpoint() string {
 
 func GetMyEndpoint() string {
 	return mThisEndpoint
+}
+
+func GetPersistentDataDir() string {
+	dataPath := path.Join(plugin.GetCurrentPath(), "data")
+	createdPersistentDataDir = util.IsDir(dataPath)
+	if createdPersistentDataDir {
+		return dataPath
+	}
+	_ = os.MkdirAll(dataPath, os.ModePerm)
+	createdPersistentDataDir = true
+	return dataPath
 }
