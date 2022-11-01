@@ -3,7 +3,7 @@ package packet
 import (
 	"encoding/json"
 	"errors"
-	"github.com/xiwh/gaydev-agent-plugin/util/buf"
+	"github.com/xiwh/hexhub-agent-plugin/util/buf"
 )
 
 type Packet struct {

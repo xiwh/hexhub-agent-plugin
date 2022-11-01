@@ -3,7 +3,7 @@ package rpc
 import (
 	"context"
 	"errors"
-	"github.com/xiwh/gaydev-agent-plugin/rpc/packet"
+	"github.com/xiwh/hexhub-agent-plugin/rpc/packet"
 	"strconv"
 	"sync/atomic"
 	"time"

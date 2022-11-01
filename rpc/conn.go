@@ -5,7 +5,7 @@ import (
 	"errors"
 	cmap "github.com/orcaman/concurrent-map/v2"
 	"github.com/wonderivan/logger"
-	"github.com/xiwh/gaydev-agent-plugin/rpc/packet"
+	"github.com/xiwh/hexhub-agent-plugin/rpc/packet"
 	"math"
 	"nhooyr.io/websocket"
 	"strconv"

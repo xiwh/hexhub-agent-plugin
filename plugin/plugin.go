@@ -5,14 +5,14 @@ import (
 	"flag"
 	"fmt"
 	"github.com/wonderivan/logger"
-	"github.com/xiwh/gaydev-agent-plugin/util"
+	"github.com/xiwh/hexhub-agent-plugin/util"
 	"os"
 	"os/user"
 	"path/filepath"
 	"strings"
 )
 
-var ApiEndpoint = "https://api.gaydev.cc"
+var ApiEndpoint = "https://api.hexhub.cc"
 var AgentEndpoint = "http://127.0.0.1:35580"
 var AgentAddr = "127.0.0.1:35580"
 var Debug = false
@@ -41,7 +41,7 @@ func Init() {
 	if err != nil {
 		panic(err)
 	}
-	HomeDir = fmt.Sprintf("%s/.gaydev", current.HomeDir)
+	HomeDir = fmt.Sprintf("%s/.hexhub", current.HomeDir)
 	PluginDir = fmt.Sprintf("%s/plugins", HomeDir)
 	if !util.IsDir(PluginDir) {
 		err := os.MkdirAll(PluginDir, 0755)

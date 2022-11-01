@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/xiwh/gaydev-agent-plugin/plugin/master"
-	"github.com/xiwh/gaydev-agent-plugin/plugin/slave"
+	"github.com/xiwh/hexhub-agent-plugin/plugin/master"
+	"github.com/xiwh/hexhub-agent-plugin/plugin/slave"
 )
 
 func main() {
