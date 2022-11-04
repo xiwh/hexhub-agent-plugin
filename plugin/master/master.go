@@ -48,6 +48,7 @@ type PluginInfo struct {
 	Endpoint        string
 	PluginDir       string
 	Ctx             context.Context
+	ctxCancel       func()
 }
 
 type MasterRoute struct {
@@ -91,7 +92,9 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 		}
 		pluginInfo.Status = PluginStatusStarted
 		if pluginInfo.Ctx != nil {
-			pluginInfo.Ctx = context.Background()
+			ctx, cancel := context.WithCancel(context.Background())
+			pluginInfo.Ctx = ctx
+			pluginInfo.ctxCancel = cancel
 			go func() {
 				<-pluginInfo.Ctx.Done()
 				err := Post(pluginInfo.Id, "kill", nil, nil)
@@ -201,8 +204,7 @@ func StopPlugin(pluginId string) error {
 	pluginInfo, ok := pluginMap.Get(pluginId)
 	if ok {
 		if pluginInfo.Ctx != nil {
-			_, cancelFunc := context.WithCancel(pluginInfo.Ctx)
-			cancelFunc()
+			pluginInfo.ctxCancel()
 			return nil
 		}
 	}
@@ -216,7 +218,9 @@ func StartPlugin(pluginId string) error {
 		return err
 	}
 	pluginInfo := initManifest(manifest)
-	pluginInfo.Ctx = context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	pluginInfo.Ctx = ctx
+	pluginInfo.ctxCancel = cancel
 	run(pluginInfo.Ctx, pluginInfo)
 	return nil
 }
@@ -269,8 +273,7 @@ func run(ctx context.Context, pluginInfo *PluginInfo) {
 		}
 		pluginInfo.Status = PluginStatusNotStarted
 		if pluginInfo.Ctx != nil {
-			_, cancelFunc := context.WithCancel(pluginInfo.Ctx)
-			cancelFunc()
+			pluginInfo.ctxCancel()
 		}
 
 	}()

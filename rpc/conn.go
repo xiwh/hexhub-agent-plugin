@@ -16,6 +16,7 @@ import (
 var ConnClosedError = errors.New("conn is closed")
 
 func NewConn(wsConn *websocket.Conn, ctx context.Context) Conn {
+	ctx, cancel := context.WithCancel(ctx)
 	v := &conn{
 		wsConn:            wsConn,
 		isClosed:          false,
@@ -26,6 +27,7 @@ func NewConn(wsConn *websocket.Conn, ctx context.Context) Conn {
 		channelAcceptChan: make(chan packet.Packet, 128),
 		closeFunc:         nil,
 		ctx:               ctx,
+		ctxCancel:         cancel,
 		id:                0xffffffff,
 	}
 	return v
@@ -63,6 +65,7 @@ type conn struct {
 	closeFunc         func(conn Conn, reason error)
 	channelAcceptChan chan packet.Packet
 	ctx               context.Context
+	ctxCancel         func()
 	id                uint32
 	err               error
 }
