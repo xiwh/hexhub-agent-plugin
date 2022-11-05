@@ -48,7 +48,6 @@ type PluginInfo struct {
 	Endpoint        string
 	PluginDir       string
 	Ctx             context.Context
-	ctxCancel       func()
 }
 
 type MasterRoute struct {
@@ -92,9 +91,7 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 		}
 		pluginInfo.Status = PluginStatusStarted
 		if pluginInfo.Ctx != nil {
-			ctx, cancel := context.WithCancel(context.Background())
-			pluginInfo.Ctx = ctx
-			pluginInfo.ctxCancel = cancel
+			pluginInfo.Ctx = context.Background()
 			go func() {
 				<-pluginInfo.Ctx.Done()
 				err := Post(pluginInfo.Id, "kill", nil, nil)
@@ -125,6 +122,7 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 				header.Add("Access-Control-Allow-Origin", "http://localhost:3000")
 				header.Add("Access-Control-Allow-Credentials", "true")
 				header.Add("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
+				header.Add("Access-Control-Expose-Headers", "*")
 				if req.Method == "OPTIONS" {
 					writer.WriteHeader(200)
 					return
@@ -204,7 +202,8 @@ func StopPlugin(pluginId string) error {
 	pluginInfo, ok := pluginMap.Get(pluginId)
 	if ok {
 		if pluginInfo.Ctx != nil {
-			pluginInfo.ctxCancel()
+			_, cancelFunc := context.WithCancel(pluginInfo.Ctx)
+			cancelFunc()
 			return nil
 		}
 	}
@@ -218,9 +217,7 @@ func StartPlugin(pluginId string) error {
 		return err
 	}
 	pluginInfo := initManifest(manifest)
-	ctx, cancel := context.WithCancel(context.Background())
-	pluginInfo.Ctx = ctx
-	pluginInfo.ctxCancel = cancel
+	pluginInfo.Ctx = context.Background()
 	run(pluginInfo.Ctx, pluginInfo)
 	return nil
 }
@@ -273,7 +270,8 @@ func run(ctx context.Context, pluginInfo *PluginInfo) {
 		}
 		pluginInfo.Status = PluginStatusNotStarted
 		if pluginInfo.Ctx != nil {
-			pluginInfo.ctxCancel()
+			_, cancelFunc := context.WithCancel(pluginInfo.Ctx)
+			cancelFunc()
 		}
 
 	}()
