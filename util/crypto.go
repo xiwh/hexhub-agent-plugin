@@ -2,10 +2,12 @@ package util
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"math/rand"
 )
 
@@ -23,7 +25,7 @@ func AesEncryptJson(v any, key []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return AesEncryptString(string(b), key), nil
+	return AesEncryptString(string(b), key)
 }
 
 // AesDecryptJson AES 解密base64并返回json序列化对象
@@ -40,10 +42,13 @@ func AesDecryptJson(base64Val string, v any, key []byte) error {
 }
 
 // AesEncryptString AES字符串加密并返回base64
-func AesEncryptString(data string, key []byte) string {
+func AesEncryptString(data string, key []byte) (string, error) {
 	b := []byte(data)
-	b = AesEncrypt(b, key)
-	return base64.StdEncoding.EncodeToString(b)
+	b, err := AesEncrypt(b, key)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(b), nil
 }
 
 // AesDecryptString AES字符串解密base64并返回解密字符串
@@ -52,11 +57,15 @@ func AesDecryptString(base64Val string, key []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(AesDecrypt(b, key)), nil
+	b, err = AesDecrypt(b, key)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 // AesEncrypt AES加密
-func AesEncrypt(data []byte, key []byte) []byte {
+func AesEncrypt(data []byte, key []byte) ([]byte, error) {
 	// 分组秘钥
 	// NewCipher该函数限制了输入k的长度必须为16, 24或者32
 	block, _ := aes.NewCipher(key)
@@ -70,10 +79,40 @@ func AesEncrypt(data []byte, key []byte) []byte {
 	encrypted := make([]byte, len(data))
 	// 加密
 	blockMode.CryptBlocks(encrypted, data)
-	return encrypted
+
+	//压缩
+	buf := bytes.NewBuffer(nil)
+	// Create destination writer
+	gzipBuf, err := gzip.NewWriterLevel(buf, gzip.BestCompression)
+	if err != nil {
+		return nil, err
+	}
+	_, err = gzipBuf.Write(encrypted)
+	if err != nil {
+		return nil, err
+	}
+	err = gzipBuf.Close()
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
-func AesDecrypt(data []byte, key []byte) []byte {
+func AesDecrypt(data []byte, key []byte) ([]byte, error) {
+	//解压缩
+	reader := bytes.NewReader(data)
+	gzipWriter, err := gzip.NewReader(reader)
+	if err != nil {
+		return nil, err
+	}
+	buf := bytes.NewBuffer(nil)
+	_, err = io.Copy(buf, gzipWriter)
+	if err != nil {
+		return nil, err
+	}
+	_ = gzipWriter.Close()
+	data = buf.Bytes()
+
 	// 分组秘钥
 	block, _ := aes.NewCipher(key)
 	// 获取秘钥块的长度
@@ -86,7 +125,8 @@ func AesDecrypt(data []byte, key []byte) []byte {
 	blockMode.CryptBlocks(orig, data)
 	// 去补全码
 	orig = PKCS7UnPadding(orig)
-	return orig
+
+	return orig, nil
 }
 
 // PKCS7Padding 补码 AES加密数据块分组长度必须为128bit(byte[16])，密钥长度可以是128bit(byte[16])、192bit(byte[24])、256bit(byte[32])中的任意一个。
