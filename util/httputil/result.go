@@ -44,6 +44,7 @@ func OutResult[T any](w http.ResponseWriter, result Result[T]) error {
 	} else {
 		w.WriteHeader(400)
 	}
+	w.Header().Add("Content-Type", "application/json; charset=utf-8")
 	b, err := json.Marshal(result)
 	if err != nil {
 		return err

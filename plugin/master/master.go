@@ -64,6 +64,10 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 		if err != nil {
 			logger.Error(err)
 		}
+		break
+	case "check":
+
+		break
 	case "/register-plugin":
 		if !plugin.Debug && writer.Header().Get("Token") != Token {
 			writer.WriteHeader(404)
@@ -106,6 +110,7 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 		if err != nil {
 			logger.Error(err)
 		}
+		break
 	default:
 		temp := uri[1:]
 		idx := strings.IndexAny(temp, "/?")

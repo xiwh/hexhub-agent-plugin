@@ -52,7 +52,7 @@ func DownloadFile(url string, Callback func(total int64, current int64)) (string
 	return tempFilePath, nil
 }
 
-func ReadReq(r *http.Request, value any) error {
+func ReadJsonBody(r *http.Request, value any) error {
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
 		return err
