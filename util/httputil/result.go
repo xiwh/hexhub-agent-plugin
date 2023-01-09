@@ -39,12 +39,12 @@ func Error(err error) Result[interface{}] {
 }
 
 func OutResult[T any](w http.ResponseWriter, result Result[T]) error {
+	w.Header().Add("Content-Type", "application/json; charset=utf-8")
 	if result.Code == ResultCodeSuccess {
 		w.WriteHeader(200)
 	} else {
 		w.WriteHeader(400)
 	}
-	w.Header().Add("Content-Type", "application/json; charset=utf-8")
 	b, err := json.Marshal(result)
 	if err != nil {
 		return err
