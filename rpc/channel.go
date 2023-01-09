@@ -3,7 +3,7 @@ package rpc
 import (
 	"context"
 	"errors"
-	"github.com/xiwh/gaydev-agent-plugin/rpc/packet"
+	"github.com/xiwh/hexhub-agent-plugin/rpc/packet"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -29,6 +29,7 @@ type Channel struct {
 	isOpen          bool
 	isClosed        bool
 	ctx             context.Context
+	ctxCancel       func()
 }
 
 type CloseInfo struct {
@@ -37,6 +38,7 @@ type CloseInfo struct {
 }
 
 func newChannel(rpcConn Conn, id uint32, method string, ctx context.Context) (*Channel, error) {
+	ctx, ctxCancel := context.WithCancel(ctx)
 	return &Channel{
 		method:          method,
 		mId:             id,
@@ -45,6 +47,7 @@ func newChannel(rpcConn Conn, id uint32, method string, ctx context.Context) (*C
 		isOpen:          false,
 		channelIdSerial: 0,
 		ctx:             ctx,
+		ctxCancel:       ctxCancel,
 	}, nil
 }
 
@@ -75,8 +78,7 @@ func (t *Channel) Close(code int, reason string) error {
 	t.isOpen = false
 	t.isClosed = true
 	defer close(t.ch)
-	_, cancel := context.WithCancel(t.ctx)
-	defer cancel()
+	t.ctxCancel()
 	return t.conn.SendSpecifyId(ChannelMethodClose, t.mId, CloseInfo{
 		code,
 		reason,

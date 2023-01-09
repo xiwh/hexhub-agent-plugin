@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	uuid "github.com/satori/go.uuid"
-	"github.com/xiwh/gaydev-agent-plugin/plugin/slave"
+	"github.com/xiwh/hexhub-agent-plugin/plugin/slave"
 	"io"
 	"net/http"
 	"net/url"

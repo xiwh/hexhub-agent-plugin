@@ -1,4 +1,4 @@
-module github.com/xiwh/gaydev-agent-plugin
+module github.com/xiwh/hexhub-agent-plugin
 
 go 1.19
 

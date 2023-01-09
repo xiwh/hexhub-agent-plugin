@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/gaydev-agent-plugin.iml" filepath="$PROJECT_DIR$/.idea/gaydev-agent-plugin.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/hexhub-agent-plugin.iml" filepath="$PROJECT_DIR$/.idea/hexhub-agent-plugin.iml" />
     </modules>
   </component>
 </project>

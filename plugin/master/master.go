@@ -10,9 +10,9 @@ import (
 	"github.com/vulcand/oxy/forward"
 	"github.com/vulcand/oxy/testutils"
 	"github.com/wonderivan/logger"
-	"github.com/xiwh/gaydev-agent-plugin/plugin"
-	"github.com/xiwh/gaydev-agent-plugin/util"
-	http2 "github.com/xiwh/gaydev-agent-plugin/util/httputil"
+	"github.com/xiwh/hexhub-agent-plugin/plugin"
+	"github.com/xiwh/hexhub-agent-plugin/util"
+	http2 "github.com/xiwh/hexhub-agent-plugin/util/httputil"
 	"io"
 	"net/http"
 	"os"
@@ -127,6 +127,7 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 				header.Add("Access-Control-Allow-Origin", "http://localhost:3000")
 				header.Add("Access-Control-Allow-Credentials", "true")
 				header.Add("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
+				header.Add("Access-Control-Expose-Headers", "*")
 				if req.Method == "OPTIONS" {
 					writer.WriteHeader(200)
 					return
