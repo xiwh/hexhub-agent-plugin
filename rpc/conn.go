@@ -9,6 +9,7 @@ import (
 	"math"
 	"nhooyr.io/websocket"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -263,7 +264,15 @@ func (t *conn) Close(err error) error {
 		})
 		t.channelMap.Clear()
 	}()
-	return t.wsConn.Close(1000, err.Error())
+	msg := err.Error()
+	msgBytes := []byte(msg)
+	//ws关闭原因最大125字节，超过120字节截取并省略
+	if len(msgBytes) > 120 {
+		msgBytes = msgBytes[0:120]
+		//utf-8为非定长编码，按固定长度截取字节最后一个字编码可能被破坏需要删除，并且在最后添加省略号
+		msg = strings.ToValidUTF8(string(msgBytes), "") + ".."
+	}
+	return t.wsConn.Close(1000, msg)
 }
 
 func (t *conn) HandleFunc(method string, handle func(conn Conn, packet packet.Packet)) {
