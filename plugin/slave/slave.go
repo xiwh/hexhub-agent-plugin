@@ -66,11 +66,7 @@ func Start(pluginId string) {
 			logger.Error(err)
 		}
 	})
-	err = http.Serve(listener, nil)
-	if err != nil {
-		logger.Error(err)
-		panic(err)
-	}
+	panic(http.Serve(listener, nil))
 }
 
 func RegisterRoute(pattern string, f func(http.ResponseWriter, *http.Request)) {

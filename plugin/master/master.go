@@ -157,7 +157,7 @@ func Start() {
 	}
 	// Forwards incoming requests to whatever location URL points to, adds proper forwarding headers
 	mForward, _ = forward.New()
-	logger.Error(http.ListenAndServe(plugin.AgentAddr, new(MasterRoute)))
+	panic(http.ListenAndServe(plugin.AgentAddr, new(MasterRoute)))
 }
 
 func initManifest(manifest plugin.Manifest) *PluginInfo {
