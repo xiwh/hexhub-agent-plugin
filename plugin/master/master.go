@@ -64,6 +64,10 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 		if err != nil {
 			logger.Error(err)
 		}
+		break
+	case "check":
+
+		break
 	case "/register-plugin":
 		if !plugin.Debug && writer.Header().Get("Token") != Token {
 			writer.WriteHeader(404)
@@ -106,6 +110,7 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 		if err != nil {
 			logger.Error(err)
 		}
+		break
 	default:
 		temp := uri[1:]
 		idx := strings.IndexAny(temp, "/?")
@@ -121,7 +126,7 @@ func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
 				header := writer.Header()
 				header.Add("Access-Control-Allow-Origin", "http://localhost:3000")
 				header.Add("Access-Control-Allow-Credentials", "true")
-				header.Add("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
+				header.Add("Access-Control-Allow-Methods", "GET, POST, HEAD, PATCH, PUT, DELETE, OPTIONS")
 				header.Add("Access-Control-Expose-Headers", "*")
 				if req.Method == "OPTIONS" {
 					writer.WriteHeader(200)
