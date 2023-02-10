@@ -4,12 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	uuid "github.com/satori/go.uuid"
-	"github.com/xiwh/hexhub-agent-plugin/plugin/slave"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"strings"
 )
 
 type writeCounter struct {
@@ -60,23 +58,11 @@ func ReadJsonBody(r *http.Request, value any) error {
 	return json.Unmarshal(b, value)
 }
 
-func FormatUrl(req *http.Request, uri string) string {
-	var reqUrl = req.URL
-	var proxyUrl = req.Header.Get("Proxy-Url")
-	if proxyUrl != "" {
-		reqUrl, _ = url.Parse(proxyUrl)
+func GetSchemeHost(url *url.URL) string {
+	port := url.Port()
+	if port == "" {
+		return fmt.Sprintf("%s://%s", url.Scheme, url.Hostname())
 	} else {
-		reqUrl, _ = url.Parse("http://" + req.Host + req.RequestURI)
-	}
-	var scheme = reqUrl.Scheme
-	var host = reqUrl.Hostname()
-	var port = reqUrl.Port()
-	uri = strings.TrimPrefix(uri, "/")
-	if scheme == "http" && port == "80" {
-		return fmt.Sprintf("%s://%s/%s/%s", scheme, host, slave.GetPluginId(), uri)
-	} else if scheme == "https" && port == "443" {
-		return fmt.Sprintf("%s://%s/%s/%s", scheme, host, slave.GetPluginId(), uri)
-	} else {
-		return fmt.Sprintf("%s://%s:%s/%s/%s", scheme, host, port, slave.GetPluginId(), uri)
+		return fmt.Sprintf("%s://%s:%s", url.Scheme, url.Hostname(), port)
 	}
 }

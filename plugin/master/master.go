@@ -2,157 +2,79 @@ package master
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	cmap "github.com/orcaman/concurrent-map/v2"
 	uuid "github.com/satori/go.uuid"
 	"github.com/vulcand/oxy/forward"
-	"github.com/vulcand/oxy/testutils"
 	"github.com/wonderivan/logger"
 	"github.com/xiwh/hexhub-agent-plugin/plugin"
-	"github.com/xiwh/hexhub-agent-plugin/util"
-	http2 "github.com/xiwh/hexhub-agent-plugin/util/httputil"
+	httputil2 "github.com/xiwh/hexhub-agent-plugin/util/httputil"
 	"io"
 	"net/http"
-	"os"
+	"net/url"
 	"os/exec"
-	"runtime"
 	"strings"
 	"time"
 )
 
-var Token string
+var CurrentVersion int
+var CurrentVersionName string
 var pluginMap = cmap.New[*PluginInfo]()
 var mForward *forward.Forwarder
+var mAllowedDomainNames = cmap.New[any]()
+
+// AutoExitTimeLimit 自动退出时限,超过多久没有进行请求交互才自动退出
+const AutoExitTimeLimit = int64(time.Minute * 5)
+
+const MasterId = "master"
 
 const PluginStatusNotInstalled = 0
 const PluginStatusDownloading = 1
 const PluginStatusDownloadFailed = 2
 const PluginStatusInstallationFailed = 3
 const PluginStatusNotStarted = 4
-const PluginStatusStarted = 5
+const PluginStatusRunning = 5
 const PluginStatusStarting = 6
 
 type PluginInfo struct {
-	Id              string
-	Name            string
-	Description     string
-	Version         int
-	VersionName     string
-	ExecCommand     string
-	Port            int
-	Status          int
-	DownloadProcess int
-	ErrorMsg        string
-	Endpoint        string
-	PluginDir       string
-	Ctx             context.Context
+	Id             string `json:"id"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+	Version        int    `json:"version"`
+	VersionName    string `json:"versionName"`
+	ExecEnter      string `json:"execEnter"`
+	Status         int    `json:"status"`
+	TotalSize      int64  `json:"totalSize"`
+	DownloadedSize int64  `json:"downloadedSize"`
+	ErrorMsg       string `json:"errorMsg"`
+	Endpoint       string `json:"endpoint"`
+	PluginDir      string `json:"pluginDir"`
+	AutoExit       bool   `json:"autoExit"`
+	Connections    int64
+	LastConnTime   int64
+	cmd            *exec.Cmd
 }
 
-type MasterRoute struct {
+type masterInfo struct {
+	Namespace   string `json:"namespace"`
+	Version     int    `json:"version"`
+	VersionName string `json:"versionName"`
 }
 
-func (t MasterRoute) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
-	uri := req.URL.RequestURI()
-	switch uri {
-	case "":
-	case "/":
-	case "/ping":
-		writer.WriteHeader(200)
-		_, err := writer.Write([]byte("ok"))
-		if err != nil {
-			logger.Error(err)
-		}
-		break
-	case "check":
+type masterHttpHandle struct {
+}
 
-		break
-	case "/register-plugin":
-		if !plugin.Debug && writer.Header().Get("Token") != Token {
-			writer.WriteHeader(404)
-			return
-		}
-		data, err := io.ReadAll(req.Body)
-		if err != nil {
-			logger.Error(err)
-			writer.WriteHeader(500)
-			return
-		}
-		var manifest plugin.Manifest
-		err = json.Unmarshal(data, &manifest)
-		if err != nil {
-			logger.Error(err)
-			writer.WriteHeader(500)
-			return
-		}
-		pluginInfo := initManifest(manifest)
-		if pluginInfo.Status == PluginStatusStarted {
-			err := StopPlugin(pluginInfo.Id)
-			if err != nil {
-				logger.Error(err)
-			}
-		}
-		pluginInfo.Status = PluginStatusStarted
-		if pluginInfo.Ctx != nil {
-			pluginInfo.Ctx = context.Background()
-			go func() {
-				<-pluginInfo.Ctx.Done()
-				err := Post(pluginInfo.Id, "kill", nil, nil)
-				if err != nil {
-					logger.Error(err)
-				}
-				pluginInfo.Ctx = nil
-			}()
-		}
-		writer.WriteHeader(200)
-		_, err = writer.Write([]byte("ok"))
-		if err != nil {
-			logger.Error(err)
-		}
-		break
-	default:
-		temp := uri[1:]
-		idx := strings.IndexAny(temp, "/?")
-		var pluginId string
-		if idx != -1 {
-			pluginId = temp[0:idx]
-		} else {
-			pluginId = temp[0:]
-		}
-		pluginInfo, ok := pluginMap.Get(pluginId)
-		if ok {
-			if pluginInfo.Status == PluginStatusStarted && pluginInfo.Endpoint != "" {
-				header := writer.Header()
-				header.Add("Access-Control-Allow-Origin", "http://localhost:3000")
-				header.Add("Access-Control-Allow-Credentials", "true")
-				header.Add("Access-Control-Allow-Methods", "GET, POST, HEAD, PATCH, PUT, DELETE, OPTIONS")
-				header.Add("Access-Control-Expose-Headers", "*")
-				if req.Method == "OPTIONS" {
-					writer.WriteHeader(200)
-					return
-				}
-				redirectUrl := ""
-				if idx != -1 {
-					redirectUrl = temp[idx:]
-				}
-				req.Header.Add("Proxy-Url", "http://"+req.Host+req.RequestURI)
-				req.URL = testutils.ParseURI(pluginInfo.Endpoint)
-				req.RequestURI = redirectUrl
-				req.Header.Add("Token", Token)
-				mForward.ServeHTTP(writer, req)
-				//httputil.Redirect(writer, req, redirectUrl, 301)
-				return
-			}
-		}
-		writer.WriteHeader(404)
+func Start(namespace string, version int, versionName, apiEndpoint string, allowedDomainNames string, port int, debug bool) {
+	CurrentVersion = version
+	CurrentVersionName = versionName
+	mAllowedDomainNames.Clear()
+	domainNameStrArr := strings.Split(allowedDomainNames, ",")
+	for _, s := range domainNameStrArr {
+		mAllowedDomainNames.Set(s, nil)
 	}
-}
-
-func Start() {
-	Token = uuid.NewV4().String()
-	logger.Info("token:%s", Token)
-	plugin.Init()
+	token := uuid.NewV4().String()
+	plugin.Init(MasterId, namespace, apiEndpoint, port, debug, token)
 	manifests, err := plugin.GetManifests()
 	if err != nil {
 		panic(err)
@@ -162,139 +84,79 @@ func Start() {
 	}
 	// Forwards incoming requests to whatever location URL points to, adds proper forwarding headers
 	mForward, _ = forward.New()
-	panic(http.ListenAndServe(plugin.AgentAddr, new(MasterRoute)))
+	heartbeat()
+	panic(http.ListenAndServe(plugin.AgentAddr, new(masterHttpHandle)))
 }
 
-func initManifest(manifest plugin.Manifest) *PluginInfo {
-	pluginInfo, ok := pluginMap.Get(manifest.Id)
-	if ok {
-		pluginInfo.Version = manifest.Version
-		pluginInfo.VersionName = manifest.VersionName
-		pluginInfo.ExecCommand = manifest.ExecCommand
-		pluginInfo.Description = manifest.Description
-		pluginInfo.Endpoint = manifest.Endpoint
+func (t masterHttpHandle) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
+	originUrl, _ := url.Parse(req.Header.Get("Origin"))
+	//判断是否允许访问
+	if req.Header.Get("Token") != "" {
+		//如果有token则验证token是否有效
+		if !checkToken(req) {
+			writer.WriteHeader(401)
+			return
+		}
 	} else {
-		pluginInfo = &PluginInfo{
-			Id:              manifest.Id,
-			Name:            manifest.Name,
-			Description:     manifest.Description,
-			Version:         manifest.Version,
-			VersionName:     manifest.VersionName,
-			ExecCommand:     manifest.ExecCommand,
-			Port:            -1,
-			Status:          PluginStatusNotStarted,
-			DownloadProcess: 0,
-			ErrorMsg:        "",
-			Endpoint:        manifest.Endpoint,
-			PluginDir:       strings.Join([]string{plugin.PluginDir, string(os.PathSeparator), manifest.Id}, ""),
-			Ctx:             nil,
-		}
-		pluginMap.Set(manifest.Id, pluginInfo)
-	}
-	return pluginInfo
-}
-
-func RestartPlugin(pluginId string) error {
-	err := StopPlugin(pluginId)
-	//如果之前在启动中，那么等待500ms再重启，避免重启失败
-	if err != nil {
-		time.Sleep(500 * time.Millisecond)
-	}
-	return StartPlugin(pluginId)
-}
-
-func StopPlugin(pluginId string) error {
-	pluginInfo, ok := pluginMap.Get(pluginId)
-	if ok {
-		if pluginInfo.Ctx != nil {
-			_, cancelFunc := context.WithCancel(pluginInfo.Ctx)
-			cancelFunc()
-			return nil
+		//否则验证origin域名是否有效
+		if !mAllowedDomainNames.Has(originUrl.Host) {
+			writer.WriteHeader(401)
+			return
 		}
 	}
 
-	return fmt.Errorf("plugin %s is not started", pluginId)
-}
-
-func StartPlugin(pluginId string) error {
-	manifest, err := plugin.GetManifest(pluginId)
-	if err != nil {
-		return err
+	//允许跨域处理
+	header := writer.Header()
+	header.Add("Access-Control-Allow-Origin", httputil2.GetSchemeHost(originUrl))
+	header.Add("Access-Control-Allow-Credentials", "true")
+	header.Add("Access-Control-Allow-Methods", "GET, POST, HEAD, PATCH, PUT, DELETE, OPTIONS")
+	header.Add("Access-Control-Expose-Headers", "*")
+	if req.Method == "OPTIONS" {
+		writer.WriteHeader(200)
+		return
 	}
-	pluginInfo := initManifest(manifest)
-	pluginInfo.Ctx = context.Background()
-	run(pluginInfo.Ctx, pluginInfo)
-	return nil
-}
 
-func InstallPlugin(pluginId string, pluginInfo *PluginInfo) error {
-	url := "xxx"
-	path, err := http2.DownloadFile(url, func(total int64, current int64) {
-		pluginInfo.DownloadProcess = int(current / total * 100)
-	})
-	if err != nil {
-		pluginInfo.Status = PluginStatusDownloadFailed
-		pluginInfo.ErrorMsg = err.Error()
-		return err
+	uri := req.URL.RequestURI()
+	switch uri {
+	case "":
+	case "/":
+	case "/ping":
+		pingHandler(writer, req)
+		break
+	case "/info":
+		infoHandler(writer, req)
+		break
+	case "/check-update":
+		checkUpdateHandler(writer, req)
+		break
+	case "/plugin/list":
+		pluginListHandler(writer, req)
+		break
+	case "/plugin/info":
+		pluginInfoHandler(writer, req)
+		break
+	case "/plugin/start":
+		pluginStartHandler(writer, req)
+		break
+	case "/plugin/restart":
+		pluginRestartHandler(writer, req)
+		break
+	case "/plugin/stop":
+		pluginStopHandler(writer, req)
+		break
+	case "/plugin/uninstall":
+		pluginUninstallHandler(writer, req)
+		break
+	case "/plugin/check-update":
+		pluginCheckUpdateHandler(writer, req)
+		break
+	case "/plugin/register":
+		pluginRegisterHandler(writer, req)
+		break
+	default:
+		defaultHandle(writer, req)
+		break
 	}
-	err = util.Unzip(path, pluginInfo.PluginDir, 0755)
-	if err != nil {
-		return err
-	}
-	//manifest, err := plugin.GetManifest(pluginId)
-	//if err != nil {
-	//	return err
-	//}
-	return nil
-}
-
-func run(ctx context.Context, pluginInfo *PluginInfo) {
-	var cmdStr string
-	if runtime.GOOS == "windows" {
-		cmdStr = fmt.Sprintf("%s/%s", pluginInfo.PluginDir, pluginInfo.ExecCommand)
-	} else {
-		cmdStr = fmt.Sprintf("cd %s && ./%s", pluginInfo.PluginDir, pluginInfo.ExecCommand)
-	}
-	cmd := exec.Command(cmdStr, "-token", Token, "-address", pluginInfo.Endpoint)
-	go func() {
-		defer func() {
-			pluginInfo.Status = PluginStatusNotStarted
-			err := recover()
-			if err != nil {
-				logger.Error(err)
-			}
-		}()
-		pluginInfo.Status = PluginStatusStarting
-		err := cmd.Start()
-		if err != nil {
-			logger.Error(err)
-		}
-		err = cmd.Wait()
-		if err != nil {
-			logger.Error(err)
-		}
-		pluginInfo.Status = PluginStatusNotStarted
-		if pluginInfo.Ctx != nil {
-			_, cancelFunc := context.WithCancel(pluginInfo.Ctx)
-			cancelFunc()
-		}
-
-	}()
-	go func() {
-		defer func() {
-			err := recover()
-			if err != nil {
-				logger.Error(err)
-			}
-		}()
-		<-ctx.Done()
-		pluginInfo.Status = PluginStatusNotStarted
-		err := cmd.Process.Kill()
-		if err != nil {
-			logger.Error(err)
-		}
-		pluginInfo.Ctx = nil
-	}()
 }
 
 func Post(pluginId string, uri string, req any, result any) error {
@@ -304,7 +166,7 @@ func Post(pluginId string, uri string, req any, result any) error {
 		return fmt.Errorf("pluginInfo %s does not exist", pluginId)
 	}
 
-	if pluginInfo.Status != PluginStatusStarted {
+	if pluginInfo.Status != PluginStatusRunning {
 		return fmt.Errorf("pluginInfo %s not started", pluginId)
 	}
 
@@ -327,8 +189,8 @@ func Post(pluginId string, uri string, req any, result any) error {
 	request, err := http.NewRequest("POST", url, reqBuf)
 
 	//增加header选项
-	request.Header.Add("Token", Token)
-	request.Header.Add("PluginId", "main")
+	request.Header.Add("Token", plugin.Token)
+	request.Header.Add("PluginId", MasterId)
 	request.Header.Add("Accept", "application/json")
 	request.Header.Add("Content-Type", "application/json")
 
@@ -355,4 +217,31 @@ func Post(pluginId string, uri string, req any, result any) error {
 	}
 	err = json.Unmarshal(data, result)
 	return err
+}
+
+func heartbeat() {
+	go func() {
+		for true {
+			time.Sleep(time.Minute)
+			now := time.Now().UnixMilli()
+			pluginMap.IterCb(func(k string, info *PluginInfo) {
+				if info.Status == PluginStatusRunning {
+					if info.AutoExit && info.Connections == 0 && (now-info.LastConnTime) >= AutoExitTimeLimit {
+						//达到自动退出的条件(允许自动退出且没有进行中的连接且超过5分钟未进行连接)
+						_ = StopPlugin(info.Id)
+					} else {
+						go func() {
+							err := Post(info.Id, "ping", nil, nil)
+							if err != nil {
+								//如果响应失败则说明插件未运行,更新其状态
+								_ = StopPlugin(info.Id)
+							}
+						}()
+
+					}
+				}
+
+			})
+		}
+	}()
 }

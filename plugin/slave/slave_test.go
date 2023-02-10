@@ -1,13 +1,12 @@
 package slave
 
 import (
-	"github.com/xiwh/hexhub-agent-plugin/plugin"
 	"testing"
 	"time"
 )
 
 func Test(t *testing.T) {
-	plugin.SetDebug()
+	//plugin.SetDebug()
 
 	go func() {
 		for true {
