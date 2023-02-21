@@ -29,13 +29,12 @@ const AutoExitTimeLimit = int64(time.Minute * 5)
 
 const MasterId = "master"
 
-const PluginStatusNotInstalled = 0
-const PluginStatusDownloading = 1
-const PluginStatusDownloadFailed = 2
-const PluginStatusInstallationFailed = 3
-const PluginStatusNotStarted = 4
-const PluginStatusRunning = 5
-const PluginStatusStarting = 6
+const PluginStatusNotStarted = 0
+const PluginStatusStarting = 1
+const PluginStatusRunning = 2
+const PluginStatusDownloading = 3
+const PluginStatusDownloadFailed = 4
+const PluginStatusInstallationFailed = 5
 
 type PluginInfo struct {
 	Id             string `json:"id"`
