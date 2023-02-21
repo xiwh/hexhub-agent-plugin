@@ -88,6 +88,7 @@ func Start(namespace string, version int, versionName, apiEndpoint string, allow
 }
 
 func (t masterHttpHandle) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
+	refererUrl, _ := url.Parse(req.Header.Get("Referer"))
 	originUrl, _ := url.Parse(req.Header.Get("Origin"))
 	//判断是否允许访问
 	if req.Header.Get("Token") != "" {
@@ -97,8 +98,8 @@ func (t masterHttpHandle) ServeHTTP(writer http.ResponseWriter, req *http.Reques
 			return
 		}
 	} else {
-		//否则验证origin域名是否有效
-		if !mAllowedDomainNames.Has(originUrl.Host) {
+		//否则验证origin或referer域名是否有效
+		if !mAllowedDomainNames.Has(originUrl.Host) && !mAllowedDomainNames.Has(refererUrl.Host) {
 			writer.WriteHeader(401)
 			return
 		}
