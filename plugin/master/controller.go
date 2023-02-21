@@ -206,7 +206,7 @@ func defaultHandle(writer http.ResponseWriter, req *http.Request) {
 				redirectUrl = temp[idx:]
 			}
 			//通过代理将具体请求转发到对应插件上
-			req.Header.Add("Proxy-Url", req.URL.String())
+			req.Header.Add("Proxy-Url", fmt.Sprintf("http://%s/%s", req.Host, strings.TrimLeft(req.RequestURI, "/")))
 			req.URL, _ = url.Parse(pluginInfo.Endpoint)
 			req.RequestURI = redirectUrl
 			req.Header.Add("Token", plugin.Token)
