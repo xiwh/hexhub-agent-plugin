@@ -141,7 +141,7 @@ func registerPlugin(manifest plugin.Manifest) {
 func heartbeat() {
 	go func() {
 		for true {
-			time.Sleep(time.Minute)
+			time.Sleep(time.Second * 10)
 			err := Post("", "ping", nil, nil)
 			if err != nil {
 				panic(err)

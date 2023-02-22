@@ -16,5 +16,5 @@ func Test(t *testing.T) {
 
 		}
 	}()
-	Start("test")
+	Start()
 }
