@@ -33,13 +33,14 @@ func Start() {
 	if err != nil {
 		panic(err)
 	}
-	debug := *flag.Bool("debug", true, "")
-	token := *flag.String("token", "", "")
-	namespace := *flag.String("namespace", "hexhub-dev", "")
-	apiEndpoint := *flag.String("apiEndpoint", "http://localhost:8080", "")
-	masterPort := *flag.Int("masterPort", 35580, "")
+	debug := flag.Bool("debug", true, "")
+	token := flag.String("token", "", "")
+	namespace := flag.String("namespace", "hexhub-dev", "")
+	apiEndpoint := flag.String("apiEndpoint", "http://localhost:8080", "")
+	masterPort := flag.Int("masterPort", 35580, "")
+	flag.Parse()
 
-	plugin.Init(manifest.PluginId, namespace, apiEndpoint, masterPort, debug, token)
+	plugin.Init(manifest.PluginId, *namespace, *apiEndpoint, *masterPort, *debug, *token)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		panic(err)
