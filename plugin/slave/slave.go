@@ -3,10 +3,12 @@ package slave
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/wonderivan/logger"
 	"github.com/xiwh/hexhub-agent-plugin/plugin"
+	"github.com/xiwh/hexhub-agent-plugin/util/httputil"
 	"io"
 	"net"
 	"net/http"
@@ -114,6 +116,20 @@ func Post(pluginId string, uri string, req any, result any) error {
 			logger.Error(err)
 		}
 	}(response.Body)
+
+	if response.StatusCode != 200 {
+		errResult := new(httputil.Result[any])
+		data, err := io.ReadAll(response.Body)
+		if err != nil {
+			return err
+		}
+		err = json.Unmarshal(data, result)
+		if err != nil {
+			return errors.New(string(data))
+		}
+		return fmt.Errorf("code:%d,msg:%s", errResult.Code, errResult.Message)
+	}
+
 	if result == nil {
 		return nil
 	}

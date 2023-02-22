@@ -3,6 +3,7 @@ package master
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	cmap "github.com/orcaman/concurrent-map/v2"
 	uuid "github.com/satori/go.uuid"
@@ -213,6 +214,18 @@ func Post(pluginId string, uri string, req any, result any) error {
 			logger.Error(err)
 		}
 	}(response.Body)
+	if response.StatusCode != 200 {
+		errResult := new(httputil2.Result[any])
+		data, err := io.ReadAll(response.Body)
+		if err != nil {
+			return err
+		}
+		err = json.Unmarshal(data, result)
+		if err != nil {
+			return errors.New(string(data))
+		}
+		return fmt.Errorf("code:%d,msg:%s", errResult.Code, errResult.Message)
+	}
 	if result == nil {
 		return nil
 	}

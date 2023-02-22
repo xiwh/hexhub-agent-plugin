@@ -185,6 +185,8 @@ func pluginRegisterHandler(writer http.ResponseWriter, req *http.Request) {
 	}
 
 	pluginInfo := initManifest(manifest)
+	pluginInfo.lock.Lock()
+	defer pluginInfo.lock.Unlock()
 	pluginInfo.Status = PluginStatusRunning
 	writer.WriteHeader(200)
 	_, err = writer.Write([]byte("ok"))

@@ -139,7 +139,7 @@ func GetAESKey() []byte {
 	return aesKey
 }
 
-func ApiPost(uri string, req any, result any) error {
+func ApiPost(uri string, req any, v any) error {
 	var reqBuf *bytes.Buffer
 	if req != nil {
 		reqData, err := json.Marshal(req)
@@ -169,14 +169,23 @@ func ApiPost(uri string, req any, result any) error {
 			logger.Error(err)
 		}
 	}(response.Body)
-	if result == nil {
+	if v == nil {
 		return nil
 	}
 	data, err := io.ReadAll(response.Body)
 	if err != nil {
 		return err
 	}
+
+	result := new(APIResult)
+	result.Data = v
 	err = json.Unmarshal(data, result)
+	if err != nil {
+		return err
+	}
+	if result.Status != 0 {
+		return fmt.Errorf(result.Msg)
+	}
 	return err
 }
 
@@ -218,7 +227,6 @@ func ApiGet(uri string, params map[string]string, v any) error {
 
 	result := new(APIResult)
 	result.Data = v
-
 	err = json.Unmarshal(data, result)
 	if err != nil {
 		return err

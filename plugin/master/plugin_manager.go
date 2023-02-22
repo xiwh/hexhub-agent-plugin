@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -96,6 +97,13 @@ func StartPlugin(pluginId string) error {
 	if err != nil {
 		return err
 	}
+	if ok {
+		if Post(pluginId, "ping", nil, nil) == nil {
+			//已启动不用重新启动
+			return nil
+		}
+
+	}
 	pluginInfo := initManifest(manifest)
 	pluginInfo.lock.Lock()
 	defer pluginInfo.lock.Unlock()
@@ -167,7 +175,10 @@ func UninstallPlugin(pluginId string) error {
 func InstallPlugin(latestInfo VersionInfo, manifest plugin.Manifest) error {
 	//安装前的插件信息
 	temp, ok := pluginMap.Get(manifest.PluginId)
-	lastInfo := *temp
+	var lastInfo PluginInfo
+	if ok {
+		lastInfo = *temp
+	}
 	//安装前提前关闭进程防止无法操作相关文件
 	currentInfo := initManifest(manifest)
 	currentInfo.lock.Lock()
@@ -207,21 +218,34 @@ func InstallPlugin(latestInfo VersionInfo, manifest plugin.Manifest) error {
 }
 
 func run(pluginInfo *PluginInfo) error {
-	var cmdStr string
-	if runtime.GOOS == "windows" {
-		cmdStr = fmt.Sprintf("%s/%s", pluginInfo.PluginDir, pluginInfo.ExecEnter)
-	} else {
-		cmdStr = fmt.Sprintf("cd %s && ./%s", pluginInfo.PluginDir, pluginInfo.ExecEnter)
-	}
+	//var cmdStr string
+	//argsStr := fmt.Sprintf(
+	//	"-token=%q -namespace=%q -apiEndpoint=%q -masterPort=%q -debug=%q",
+	//	plugin.Token,
+	//	plugin.Namespace,
+	//	plugin.ApiEndpoint,
+	//	strconv.FormatInt(int64(plugin.MasterPort), 10),
+	//	strconv.FormatBool(plugin.Debug),
+	//)
+	//println(argsStr)
+
 	cmd := exec.Command(
-		cmdStr,
-		"-token", plugin.Token,
-		"-namespace", plugin.Namespace,
-		"-apiEndpoint", plugin.ApiEndpoint,
-		"-masterPort", strconv.FormatInt(int64(plugin.MasterPort), 10),
-		"-debug", strconv.FormatBool(plugin.Debug),
+		filepath.Join(pluginInfo.PluginDir, pluginInfo.ExecEnter),
+		fmt.Sprintf("-token=%s", plugin.Token),
+		fmt.Sprintf("-namespace=%s", plugin.Namespace),
+		fmt.Sprintf("-apiEndpoint=%s", plugin.ApiEndpoint),
+		fmt.Sprintf("-masterPort=%s", strconv.FormatInt(int64(plugin.MasterPort), 10)),
+		fmt.Sprintf("-debug=%s", strconv.FormatBool(plugin.Debug)),
 	)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	currentProcess, _ := syscall.GetCurrentProcess()
+	cmd.SysProcAttr = &syscall.SysProcAttr{ParentProcess: currentProcess, HideWindow: true}
 	err := cmd.Start()
+	if err != nil {
+		return err
+	}
 	pluginInfo.Status = PluginStatusStarting
 
 	go func() {
