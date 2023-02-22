@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -240,8 +239,6 @@ func run(pluginInfo *PluginInfo) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	currentProcess, _ := syscall.GetCurrentProcess()
-	cmd.SysProcAttr = &syscall.SysProcAttr{ParentProcess: currentProcess, HideWindow: true}
 	err := cmd.Start()
 	if err != nil {
 		return err
