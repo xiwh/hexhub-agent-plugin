@@ -166,7 +166,8 @@ func UninstallPlugin(pluginId string) error {
 
 func InstallPlugin(latestInfo VersionInfo, manifest plugin.Manifest) error {
 	//安装前的插件信息
-	lastInfo, ok := pluginMap.Get(manifest.PluginId)
+	temp, ok := pluginMap.Get(manifest.PluginId)
+	lastInfo := *temp
 	//安装前提前关闭进程防止无法操作相关文件
 	currentInfo := initManifest(manifest)
 	currentInfo.lock.Lock()
