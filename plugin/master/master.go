@@ -13,14 +13,17 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 )
 
 var CurrentVersion int
 var CurrentVersionName string
-var pluginMap = cmap.New[*PluginInfo]()
 var mForward *forward.Forwarder
 var mAllowedDomainNames = cmap.New[any]()
 
@@ -50,8 +53,9 @@ type PluginInfo struct {
 	Endpoint       string `json:"endpoint"`
 	PluginDir      string `json:"pluginDir"`
 	AutoExit       bool   `json:"autoExit"`
-	Connections    int64
-	LastConnTime   int64
+	Connections    int64  `json:"connections"`
+	LastConnTime   int64  `json:"lastConnTime"`
+	lock           *sync.Mutex
 	cmd            *exec.Cmd
 }
 
@@ -84,6 +88,7 @@ func Start(namespace string, version int, versionName, apiEndpoint string, allow
 	// Forwards incoming requests to whatever location URL points to, adds proper forwarding headers
 	mForward, _ = forward.New()
 	heartbeat()
+	pluginCoDeath()
 	panic(http.ListenAndServe(plugin.AgentAddr, new(masterHttpHandle)))
 }
 
@@ -116,7 +121,7 @@ func (t masterHttpHandle) ServeHTTP(writer http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	uri := req.URL.RequestURI()
+	uri := req.URL.Path
 	switch uri {
 	case "":
 	case "/":
@@ -231,6 +236,7 @@ func heartbeat() {
 						_ = StopPlugin(info.Id)
 					} else {
 						go func() {
+							//异步运行防止堵塞
 							err := Post(info.Id, "ping", nil, nil)
 							if err != nil {
 								//如果响应失败则说明插件未运行,更新其状态
@@ -240,8 +246,25 @@ func heartbeat() {
 
 					}
 				}
-
 			})
 		}
+	}()
+}
+
+func pluginCoDeath() {
+	go func() {
+		ch := make(chan os.Signal, 1)
+		signal.Notify(ch, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+		<-ch
+		logger.Error("The main process is dead")
+		//当监听到主进程关闭,尽量将子插件一同关闭
+		pluginMap.IterCb(func(k string, info *PluginInfo) {
+			if info.Status == PluginStatusRunning {
+				go func() {
+					//异步运行防止来不及干掉其他进程
+					_ = StopPlugin(info.Id)
+				}()
+			}
+		})
 	}()
 }

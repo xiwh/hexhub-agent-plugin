@@ -66,6 +66,7 @@ func pluginListHandler(writer http.ResponseWriter, req *http.Request) {
 }
 
 func pluginInfoHandler(writer http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
 	pluginId := req.Form.Get("pluginId")
 	pluginInfo, _ := pluginMap.Get(pluginId)
 	if pluginInfo == nil {
@@ -76,10 +77,12 @@ func pluginInfoHandler(writer http.ResponseWriter, req *http.Request) {
 }
 
 func pluginStartHandler(writer http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
 	pluginId := req.Form.Get("pluginId")
 	err := StartPlugin(pluginId)
 	if err != nil {
 		_ = httputil2.OutResult(writer, httputil2.Error(err))
+		return
 	} else {
 		//启动之后每个250ms获取一下状态判断是否启动成功,直到尝试超时
 		for i := 0; i < 10; i++ {
@@ -95,10 +98,12 @@ func pluginStartHandler(writer http.ResponseWriter, req *http.Request) {
 }
 
 func pluginRestartHandler(writer http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
 	pluginId := req.Form.Get("pluginId")
 	err := RestartPlugin(pluginId)
 	if err != nil {
 		_ = httputil2.OutResult(writer, httputil2.Error(err))
+		return
 	} else {
 		//启动之后每个250ms获取一下状态判断是否启动成功,直到尝试超时
 		for i := 0; i < 10; i++ {
@@ -114,10 +119,12 @@ func pluginRestartHandler(writer http.ResponseWriter, req *http.Request) {
 }
 
 func pluginStopHandler(writer http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
 	pluginId := req.Form.Get("pluginId")
 	err := StopPlugin(pluginId)
 	if err != nil {
 		_ = httputil2.OutResult(writer, httputil2.Error(err))
+		return
 	} else {
 		//启动之后每个250ms获取一下状态判断是否关闭成功,直到尝试超时
 		for i := 0; i < 10; i++ {
@@ -133,6 +140,7 @@ func pluginStopHandler(writer http.ResponseWriter, req *http.Request) {
 }
 
 func pluginUninstallHandler(writer http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
 	pluginId := req.Form.Get("pluginId")
 	err := UninstallPlugin(pluginId)
 	if err != nil {
@@ -143,13 +151,14 @@ func pluginUninstallHandler(writer http.ResponseWriter, req *http.Request) {
 }
 
 func pluginCheckUpdateHandler(writer http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
 	pluginId := req.Form.Get("pluginId")
-	err := CheckUpdate(pluginId)
+	result, err := CheckUpdate(pluginId)
 	if err != nil {
 		_ = httputil2.OutResult(writer, httputil2.Error(err))
 		return
 	}
-	_ = httputil2.OutResult(writer, httputil2.Success(""))
+	_ = httputil2.OutResult(writer, httputil2.Success(result))
 }
 
 func pluginRegisterHandler(writer http.ResponseWriter, req *http.Request) {

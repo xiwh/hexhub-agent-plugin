@@ -30,6 +30,12 @@ var PluginsDir string
 
 var aesKey []byte
 
+type APIResult struct {
+	Status int
+	Msg    string
+	Data   any
+}
+
 type Manifest struct {
 	PluginId    string `json:"pluginId"`
 	Name        string `json:"name"`
@@ -64,8 +70,8 @@ func Init(currentPluginId string, namespace string, apiEndpoint string, masterPo
 	if err != nil {
 		panic(err)
 	}
-	HomeDir = fmt.Sprintf("%s/.%s", current.HomeDir, namespace)
-	PluginsDir = fmt.Sprintf("%s/plugins", HomeDir)
+	HomeDir = filepath.Join(current.HomeDir, "."+namespace)
+	PluginsDir = filepath.Join(HomeDir, "plugins")
 	if !util.IsDir(PluginsDir) {
 		err := os.MkdirAll(PluginsDir, 0755)
 		if err != nil {
@@ -76,7 +82,7 @@ func Init(currentPluginId string, namespace string, apiEndpoint string, masterPo
 }
 
 func GetManifest(pluginId string) (Manifest, error) {
-	thisPluginDir := fmt.Sprintf("%s/%s", PluginsDir, pluginId)
+	thisPluginDir := filepath.Join(PluginsDir, pluginId)
 	manifestFile := strings.Join([]string{thisPluginDir, string(os.PathSeparator), "manifest.json"}, "")
 	manifest, err := readManifestFile(manifestFile)
 	if err != nil {
@@ -121,7 +127,7 @@ func GetCurrentPath() string {
 }
 
 func GetCurrentPersistentDir() string {
-	dataPath := path.Join(HomeDir, CurrentPluginId, "data")
+	dataPath := path.Join(HomeDir, "data", CurrentPluginId)
 	if util.IsDir(dataPath) {
 		return dataPath
 	}
@@ -174,7 +180,7 @@ func ApiPost(uri string, req any, result any) error {
 	return err
 }
 
-func ApiGet(uri string, params map[string]string, result any) error {
+func ApiGet(uri string, params map[string]string, v any) error {
 	client := &http.Client{}
 	reqUrl := FormatApiUrl(uri)
 	values := url.Values{}
@@ -190,6 +196,7 @@ func ApiGet(uri string, params map[string]string, result any) error {
 	if err != nil {
 		return err
 	}
+	request.Header.Add("Hexhub-Client", CurrentPluginId)
 	//处理返回结果
 	response, err := client.Do(request)
 	if err != nil {
@@ -201,14 +208,24 @@ func ApiGet(uri string, params map[string]string, result any) error {
 			logger.Error(err)
 		}
 	}(response.Body)
-	if result == nil {
+	if v == nil {
 		return nil
 	}
 	data, err := io.ReadAll(response.Body)
 	if err != nil {
 		return err
 	}
+
+	result := new(APIResult)
+	result.Data = v
+
 	err = json.Unmarshal(data, result)
+	if err != nil {
+		return err
+	}
+	if result.Status != 0 {
+		return fmt.Errorf(result.Msg)
+	}
 	return err
 }
 
