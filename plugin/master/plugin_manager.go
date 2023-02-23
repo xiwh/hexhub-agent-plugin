@@ -6,9 +6,9 @@ import (
 	"github.com/wonderivan/logger"
 	"github.com/xiwh/hexhub-agent-plugin/plugin"
 	"github.com/xiwh/hexhub-agent-plugin/util"
+	"github.com/xiwh/hexhub-agent-plugin/util/executil"
 	httputil2 "github.com/xiwh/hexhub-agent-plugin/util/httputil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -228,7 +228,7 @@ func run(pluginInfo *PluginInfo) error {
 	//)
 	//println(argsStr)
 
-	cmd := exec.Command(
+	cmd, err := executil.ExecChildProcess(
 		filepath.Join(pluginInfo.PluginDir, pluginInfo.ExecEnter),
 		fmt.Sprintf("-token=%s", plugin.Token),
 		fmt.Sprintf("-namespace=%s", plugin.Namespace),
@@ -236,13 +236,10 @@ func run(pluginInfo *PluginInfo) error {
 		fmt.Sprintf("-masterPort=%s", strconv.FormatInt(int64(plugin.MasterPort), 10)),
 		fmt.Sprintf("-debug=%s", strconv.FormatBool(plugin.Debug)),
 	)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	err := cmd.Start()
 	if err != nil {
 		return err
 	}
+
 	pluginInfo.Status = PluginStatusStarting
 
 	go func() {
