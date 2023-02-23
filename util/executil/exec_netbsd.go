@@ -2,15 +2,14 @@ package executil
 
 import (
 	"os/exec"
-	"syscall"
 )
 
 func initCmd(cmd *exec.Cmd) error {
-	gid := syscall.Getgid()
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-		Pgid:    gid,
-	}
+	//gid := syscall.Getgid()
+	//cmd.SysProcAttr = &syscall.SysProcAttr{
+	//	Setpgid: true,
+	//	Pgid:    gid,
+	//}
 	return nil
 }
 

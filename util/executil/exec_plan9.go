@@ -2,11 +2,10 @@ package executil
 
 import (
 	"os/exec"
-	"syscall"
 )
 
 func initCmd(cmd *exec.Cmd) error {
-	cmd.SysProcAttr = &syscall.SysProcAttr{}
+	//cmd.SysProcAttr = &syscall.SysProcAttr{}
 	return nil
 }
 
