@@ -116,6 +116,7 @@ func (t masterHttpHandle) ServeHTTP(writer http.ResponseWriter, req *http.Reques
 	header.Add("Access-Control-Allow-Origin", httputil2.GetSchemeHost(originUrl))
 	header.Add("Access-Control-Allow-Credentials", "true")
 	header.Add("Access-Control-Allow-Methods", "GET, POST, HEAD, PATCH, PUT, DELETE, OPTIONS")
+	header.Add("Access-Control-Allow-Headers", "*")
 	header.Add("Access-Control-Expose-Headers", "*")
 	if req.Method == "OPTIONS" {
 		writer.WriteHeader(200)
