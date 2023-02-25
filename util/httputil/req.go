@@ -58,6 +58,15 @@ func ReadJsonBody(r *http.Request, value any) error {
 	return json.Unmarshal(b, value)
 }
 
+func GetPageId(r *http.Request) string {
+	pageId := r.Header.Get("Hexhub-Page-Id")
+	if pageId == "" {
+		_ = r.ParseForm()
+		pageId = r.Form.Get("hexhubPageId")
+	}
+	return pageId
+}
+
 func GetSchemeHost(url *url.URL) string {
 	port := url.Port()
 	if port == "" {
