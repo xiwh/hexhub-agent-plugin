@@ -113,16 +113,22 @@ func StartPlugin(pluginId string) error {
 	return run(pluginInfo)
 }
 
-func CheckUpdate(pluginId string) (result CheckUpdateResult, err error) {
-	var latestInfo VersionInfo
+var latestInfo *VersionInfo
+var getLatestInfoTime time.Duration
 
-	err = plugin.ApiGet("client/plugin/latest-version", map[string]string{
-		"os":       runtime.GOOS,
-		"arch":     runtime.GOARCH,
-		"pluginId": pluginId,
-	}, &latestInfo)
-	if err != nil {
-		return result, err
+func CheckUpdate(pluginId string) (result CheckUpdateResult, err error) {
+	now := time.Duration(time.Now().UnixMilli())
+	if latestInfo == nil || now-getLatestInfoTime >= 5*time.Minute {
+		//5分钟内只获取一次版本信息
+		err = plugin.ApiGet("client/plugin/latest-version", map[string]string{
+			"os":       runtime.GOOS,
+			"arch":     runtime.GOARCH,
+			"pluginId": pluginId,
+		}, latestInfo)
+		if err != nil {
+			return result, err
+		}
+		getLatestInfoTime = now
 	}
 
 	currentInfo, ok := pluginMap.Get(pluginId)
@@ -133,7 +139,7 @@ func CheckUpdate(pluginId string) (result CheckUpdateResult, err error) {
 		currentInfo.Status == PluginStatusInstallationFailed ||
 		currentInfo.Version < latestInfo.Manifest.Version {
 
-		err = InstallPlugin(latestInfo, latestInfo.Manifest)
+		err = InstallPlugin(*latestInfo, latestInfo.Manifest)
 		if err != nil {
 			return result, err
 		}
