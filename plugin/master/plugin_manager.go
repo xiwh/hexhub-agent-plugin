@@ -120,15 +120,17 @@ var getLatestInfoTime time.Duration
 func CheckUpdate(pluginId string) (result CheckUpdateResult, err error) {
 	now := time.Duration(time.Now().UnixMilli())
 	if latestInfo == nil || now-getLatestInfoTime >= 5*time.Minute {
+		info := VersionInfo{}
 		//5分钟内只获取一次版本信息
 		err = plugin.ApiGet("client/plugin/latest-version", map[string]string{
 			"os":       runtime.GOOS,
 			"arch":     runtime.GOARCH,
 			"pluginId": pluginId,
-		}, latestInfo)
+		}, &info)
 		if err != nil {
 			return result, err
 		}
+		latestInfo = &info
 		getLatestInfoTime = now
 	}
 
