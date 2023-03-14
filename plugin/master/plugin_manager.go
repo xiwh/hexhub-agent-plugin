@@ -92,24 +92,25 @@ func StopPlugin(pluginId string) error {
 
 func StartPlugin(pluginId string) error {
 	currentInfo, ok := pluginMap.Get(pluginId)
+	if ok {
+		if currentInfo.Status == PluginStatusRunning{
+			if Post(pluginId, "ping", nil, nil) == nil {
+				//已启动不用重新启动
+				return nil
+			}
+		}else{
+			//状态为已启动但是未检测到响应则先关闭
+			StopPlugin(pluginId)
+		}
+	}
+	//未检测到启动
 	manifest, err := plugin.GetManifest(pluginId)
 	if err != nil {
 		return err
 	}
-	if ok {
-		if Post(pluginId, "ping", nil, nil) == nil {
-			//已启动不用重新启动
-			return nil
-		}
-
-	}
 	pluginInfo := initManifest(manifest)
 	pluginInfo.lock.Lock()
 	defer pluginInfo.lock.Unlock()
-	if ok && currentInfo.Status == PluginStatusRunning {
-		//已启动不用重新启动
-		return nil
-	}
 	return run(pluginInfo)
 }
 
