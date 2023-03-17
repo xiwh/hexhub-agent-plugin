@@ -302,8 +302,7 @@ func (t *conn) triggerClose(err error) {
 	if !t.isClosed {
 		t.isClosed = true
 		defer func() {
-			_, cancelFunc := context.WithCancel(t.ctx)
-			cancelFunc()
+			t.ctxCancel()
 		}()
 		if t.closeFunc != nil {
 			t.closeFunc(t, err)
