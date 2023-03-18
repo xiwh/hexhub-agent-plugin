@@ -1,6 +1,7 @@
 package master
 
 import (
+	"errors"
 	"fmt"
 	cmap "github.com/orcaman/concurrent-map/v2"
 	"github.com/wonderivan/logger"
@@ -93,12 +94,12 @@ func StopPlugin(pluginId string) error {
 func StartPlugin(pluginId string) error {
 	currentInfo, ok := pluginMap.Get(pluginId)
 	if ok {
-		if currentInfo.Status == PluginStatusRunning{
+		if currentInfo.Status == PluginStatusRunning {
 			if Post(pluginId, "ping", nil, nil) == nil {
 				//已启动不用重新启动
 				return nil
 			}
-		}else{
+		} else {
 			//状态为已启动但是未检测到响应则先关闭
 			StopPlugin(pluginId)
 		}
@@ -167,11 +168,14 @@ func UninstallPlugin(pluginId string) error {
 		_ = os.RemoveAll(filepath.Join(plugin.PluginsDir, pluginId))
 		return nil
 	}
+	err := WaitStopPlugin(pluginInfo)
+	if err != nil {
+		return err
+	}
 	pluginInfo.lock.Lock()
 	defer pluginInfo.lock.Unlock()
-	_ = _stopPlugin(pluginInfo)
 	time.Sleep(500 * time.Millisecond)
-	err := os.RemoveAll(pluginInfo.PluginDir)
+	err = os.RemoveAll(pluginInfo.PluginDir)
 	if err != nil {
 		globalLock.Lock()
 		defer globalLock.Unlock()
@@ -189,9 +193,15 @@ func InstallPlugin(latestInfo VersionInfo, manifest plugin.Manifest) error {
 	}
 	//安装前提前关闭进程防止无法操作相关文件
 	currentInfo := initManifest(manifest)
+
+	err := WaitStopPlugin(currentInfo)
+	if err != nil {
+		return err
+	}
+
 	currentInfo.lock.Lock()
 	defer currentInfo.lock.Unlock()
-	_ = _stopPlugin(currentInfo)
+
 	//已经在下载中不能重复下载
 	if currentInfo.Status == PluginStatusDownloading {
 		return nil
@@ -267,6 +277,27 @@ func run(pluginInfo *PluginInfo) error {
 	}()
 
 	return err
+}
+
+func WaitStopPlugin(pluginInfo *PluginInfo) error {
+	if Post(pluginInfo.Id, "ping", nil, nil) != nil {
+		pluginInfo.lock.Lock()
+		_ = _stopPlugin(pluginInfo)
+		pluginInfo.lock.Unlock()
+		//停止成功
+		return nil
+	}
+	for i := 0; i < 20; i++ {
+		pluginInfo.lock.Lock()
+		_ = _stopPlugin(pluginInfo)
+		pluginInfo.lock.Unlock()
+		time.Sleep(100 * time.Millisecond)
+		if Post(pluginInfo.Id, "ping", nil, nil) != nil {
+			//停止成功
+			return nil
+		}
+	}
+	return errors.New("stop failed")
 }
 
 func _stopPlugin(pluginInfo *PluginInfo) error {
