@@ -187,12 +187,15 @@ func UninstallPlugin(pluginId string) error {
 }
 
 func InstallPlugin(latestInfo VersionInfo, manifest plugin.Manifest) error {
+	globalLock.Lock()
 	//安装前的插件信息
 	temp, ok := pluginMap.Get(manifest.PluginId)
 	var lastInfo PluginInfo
 	if ok {
 		lastInfo = *temp
 	}
+	globalLock.Unlock()
+
 	//安装前提前关闭进程防止无法操作相关文件
 	currentInfo := initManifest(manifest)
 	currentInfo.lock.Lock()
@@ -207,11 +210,11 @@ func InstallPlugin(latestInfo VersionInfo, manifest plugin.Manifest) error {
 	if currentInfo.Status == PluginStatusDownloading {
 		return nil
 	}
+
 	//拿到锁后,再次验证版本是否已经为最新避免并发时重复下载安装
-	if ok &&
-		lastInfo.Version >= currentInfo.Version &&
-		currentInfo.Status != PluginStatusInstallationFailed &&
-		currentInfo.Status != PluginStatusDownloadFailed {
+	if (ok && lastInfo.Version >= latestInfo.Version) ||
+		currentInfo.Status == PluginStatusInstallationFailed ||
+		currentInfo.Status == PluginStatusDownloadFailed {
 		return nil
 	}
 	currentInfo.Status = PluginStatusDownloading
