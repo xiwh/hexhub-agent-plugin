@@ -168,12 +168,14 @@ func UninstallPlugin(pluginId string) error {
 		_ = os.RemoveAll(filepath.Join(plugin.PluginsDir, pluginId))
 		return nil
 	}
+
+	pluginInfo.lock.Lock()
+	defer pluginInfo.lock.Unlock()
+
 	err := WaitStopPlugin(pluginInfo)
 	if err != nil {
 		return err
 	}
-	pluginInfo.lock.Lock()
-	defer pluginInfo.lock.Unlock()
 	time.Sleep(500 * time.Millisecond)
 	err = os.RemoveAll(pluginInfo.PluginDir)
 	if err != nil {
@@ -193,14 +195,13 @@ func InstallPlugin(latestInfo VersionInfo, manifest plugin.Manifest) error {
 	}
 	//安装前提前关闭进程防止无法操作相关文件
 	currentInfo := initManifest(manifest)
+	currentInfo.lock.Lock()
+	defer currentInfo.lock.Unlock()
 
 	err := WaitStopPlugin(currentInfo)
 	if err != nil {
 		return err
 	}
-
-	currentInfo.lock.Lock()
-	defer currentInfo.lock.Unlock()
 
 	//已经在下载中不能重复下载
 	if currentInfo.Status == PluginStatusDownloading {
@@ -281,16 +282,12 @@ func run(pluginInfo *PluginInfo) error {
 
 func WaitStopPlugin(pluginInfo *PluginInfo) error {
 	if Post(pluginInfo.Id, "ping", nil, nil) != nil {
-		pluginInfo.lock.Lock()
 		_ = _stopPlugin(pluginInfo)
-		pluginInfo.lock.Unlock()
 		//停止成功
 		return nil
 	}
 	for i := 0; i < 20; i++ {
-		pluginInfo.lock.Lock()
 		_ = _stopPlugin(pluginInfo)
-		pluginInfo.lock.Unlock()
 		time.Sleep(100 * time.Millisecond)
 		if Post(pluginInfo.Id, "ping", nil, nil) != nil {
 			//停止成功
