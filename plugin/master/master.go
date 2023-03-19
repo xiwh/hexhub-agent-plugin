@@ -38,7 +38,7 @@ const PluginStatusStarting = 1
 const PluginStatusRunning = 2
 const PluginStatusDownloading = 3
 const PluginStatusDownloadFailed = 4
-const PluginStatusInstallationFailed = 5
+const PluginStatusInstallFailed = 5
 
 type PluginInfo struct {
 	Id             string `json:"id"`

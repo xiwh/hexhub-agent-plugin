@@ -70,6 +70,10 @@ func initManifest(manifest plugin.Manifest) *PluginInfo {
 	return pluginInfo
 }
 
+func GetPluginInfo(pluginId string) (*PluginInfo, bool) {
+	return pluginMap.Get(pluginId)
+}
+
 func RestartPlugin(pluginId string) error {
 	err := StopPlugin(pluginId)
 	//如果之前在启动中，那么等待250ms再重启，避免重启失败
@@ -94,14 +98,26 @@ func StopPlugin(pluginId string) error {
 func StartPlugin(pluginId string) error {
 	currentInfo, ok := pluginMap.Get(pluginId)
 	if ok {
-		if currentInfo.Status == PluginStatusRunning {
-			if Post(pluginId, "ping", nil, nil) == nil {
-				//已启动不用重新启动
+		currentInfo.lock.Lock()
+		currentInfo, ok = pluginMap.Get(pluginId)
+		if ok {
+			//双重检测保证并发调用启动，不会重复启动
+			if currentInfo.Status == PluginStatusStarting {
+				currentInfo.lock.Unlock()
 				return nil
+			} else if currentInfo.Status == PluginStatusRunning {
+				if Post(pluginId, "ping", nil, nil) == nil {
+					currentInfo.lock.Unlock()
+					//已启动不用重新启动
+					return nil
+				} else {
+					currentInfo.lock.Unlock()
+				}
+			} else {
+				currentInfo.lock.Unlock()
 			}
 		} else {
-			//状态为已启动但是未检测到响应则先关闭
-			StopPlugin(pluginId)
+			currentInfo.lock.Unlock()
 		}
 	}
 	//未检测到启动
@@ -112,6 +128,9 @@ func StartPlugin(pluginId string) error {
 	pluginInfo := initManifest(manifest)
 	pluginInfo.lock.Lock()
 	defer pluginInfo.lock.Unlock()
+	if currentInfo.Status == PluginStatusStarting || currentInfo.Status == PluginStatusRunning {
+		return nil
+	}
 	return run(pluginInfo)
 }
 
@@ -140,7 +159,7 @@ func CheckUpdate(pluginId string) (result CheckUpdateResult, err error) {
 	//判断是否已下载并且版本是最新
 	if !ok ||
 		currentInfo.Status == PluginStatusDownloadFailed ||
-		currentInfo.Status == PluginStatusInstallationFailed ||
+		currentInfo.Status == PluginStatusInstallFailed ||
 		currentInfo.Version < latestInfo.Manifest.Version {
 
 		err = InstallPlugin(*latestInfo, latestInfo.Manifest)
@@ -213,7 +232,7 @@ func InstallPlugin(latestInfo VersionInfo, manifest plugin.Manifest) error {
 
 	//拿到锁后,再次验证版本是否已经为最新避免并发时重复下载安装
 	if (ok && lastInfo.Version >= latestInfo.Version) ||
-		currentInfo.Status == PluginStatusInstallationFailed ||
+		currentInfo.Status == PluginStatusInstallFailed ||
 		currentInfo.Status == PluginStatusDownloadFailed {
 		return nil
 	}
@@ -231,11 +250,12 @@ func InstallPlugin(latestInfo VersionInfo, manifest plugin.Manifest) error {
 	_ = os.RemoveAll(currentInfo.PluginDir)
 	err = util.Unzip(path, currentInfo.PluginDir, os.ModePerm)
 	if err != nil {
-		currentInfo.Status = PluginStatusInstallationFailed
+		currentInfo.Status = PluginStatusInstallFailed
 		//安装失败清除残余文件
 		_ = os.RemoveAll(currentInfo.PluginDir)
 		return err
 	}
+	currentInfo.Status = PluginStatusNotStarted
 	return nil
 }
 
@@ -251,6 +271,8 @@ func run(pluginInfo *PluginInfo) error {
 	//)
 	//println(argsStr)
 
+	pluginInfo.Status = PluginStatusStarting
+
 	cmd, err := executil.ExecChildProcess(
 		filepath.Join(pluginInfo.PluginDir, pluginInfo.ExecEnter),
 		fmt.Sprintf("-token=%s", plugin.Token),
@@ -260,10 +282,9 @@ func run(pluginInfo *PluginInfo) error {
 		fmt.Sprintf("-debug=%s", strconv.FormatBool(plugin.Debug)),
 	)
 	if err != nil {
+		pluginInfo.Status = PluginStatusNotStarted
 		return err
 	}
-
-	pluginInfo.Status = PluginStatusStarting
 
 	go func() {
 		defer func() {
