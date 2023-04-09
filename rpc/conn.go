@@ -254,7 +254,7 @@ func (t *conn) Close(err error) error {
 	if t.isClosed {
 		return ConnClosedError
 	}
-	t.triggerClose(err)
+	defer t.triggerClose(err)
 	defer func() {
 		t.channelMap.IterCb(func(k string, v *Channel) {
 			err := v.Close(CloseInterrupt, "rpc connection closed")

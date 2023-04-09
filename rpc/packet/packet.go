@@ -41,6 +41,9 @@ func (t Packet) Data(v any) error {
 }
 
 func DecodePacket(bytes []byte) (packet Packet, err error) {
+	for i, mByte := range bytes {
+		bytes[i] = mByte ^ byte(i&0xff)
+	}
 	b := buf.Create(bytes)
 	methodLen, _, err := b.ReadUInt16()
 	if err != nil {
@@ -109,5 +112,9 @@ func EncodePacket(packet Packet) []byte {
 	data.WriteUInt32(packet.mId)
 	data.WriteBytes(methodBytes)
 	data.WriteBytes(packet.mBytes)
-	return data.Bytes()
+	result := data.Bytes()
+	for i, mByte := range result {
+		result[i] = mByte ^ byte(i&0xff)
+	}
+	return result
 }
