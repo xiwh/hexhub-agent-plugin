@@ -210,7 +210,7 @@ func (t *conn) Read() (packet.Packet, error) {
 	if err != nil {
 		return p, err
 	}
-	return packet.DecodePacket(b)
+	return packet.DecodePacket(b, true)
 }
 
 func (t *conn) Send(method string, v any) (uint32, error) {
@@ -291,7 +291,7 @@ func (t *conn) SendSpecifyId(method string, id uint32, v any) error {
 	if t.isClosed {
 		return ConnClosedError
 	}
-	bytes, err := packet.Encode(method, id, v)
+	bytes, err := packet.Encode(method, id, v, true)
 	if err != nil {
 		return err
 	}

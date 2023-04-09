@@ -29,7 +29,7 @@ func (t Packet) String() string {
 }
 
 func (t Packet) SubPacket() (Packet, error) {
-	return DecodePacket(t.mBytes)
+	return DecodePacket(t.mBytes, false)
 }
 
 func (t Packet) Bytes() []byte {
@@ -40,9 +40,11 @@ func (t Packet) Data(v any) error {
 	return json.Unmarshal(t.mBytes, v)
 }
 
-func DecodePacket(bytes []byte) (packet Packet, err error) {
-	for i, mByte := range bytes {
-		bytes[i] = mByte ^ byte(i&0xff)
+func DecodePacket(bytes []byte, isXor bool) (packet Packet, err error) {
+	if isXor {
+		for i, mByte := range bytes {
+			bytes[i] = mByte ^ byte(i&0xff)
+		}
 	}
 	b := buf.Create(bytes)
 	methodLen, _, err := b.ReadUInt16()
@@ -75,7 +77,7 @@ func CreatePacket(method string, id uint32, v any) (Packet, error) {
 	var dataBytes []byte
 	switch v.(type) {
 	case Packet:
-		dataBytes = EncodePacket(v.(Packet))
+		dataBytes = EncodePacket(v.(Packet), false)
 	case string:
 		dataBytes = []byte(v.(string))
 	case []byte:
@@ -96,15 +98,15 @@ func CreatePacket(method string, id uint32, v any) (Packet, error) {
 	}, nil
 }
 
-func Encode(method string, id uint32, v any) ([]byte, error) {
+func Encode(method string, id uint32, v any, isXor bool) ([]byte, error) {
 	packet, err := CreatePacket(method, id, v)
 	if err != nil {
 		return nil, err
 	}
-	return EncodePacket(packet), nil
+	return EncodePacket(packet, isXor), nil
 }
 
-func EncodePacket(packet Packet) []byte {
+func EncodePacket(packet Packet, isXor bool) []byte {
 	data := buf.CreateBySize(10 + len(packet.mBytes))
 	methodBytes := []byte(packet.method)
 	data.WriteUInt16(uint16(len(methodBytes)))
@@ -113,8 +115,10 @@ func EncodePacket(packet Packet) []byte {
 	data.WriteBytes(methodBytes)
 	data.WriteBytes(packet.mBytes)
 	result := data.Bytes()
-	for i, mByte := range result {
-		result[i] = mByte ^ byte(i&0xff)
+	if isXor {
+		for i, mByte := range result {
+			result[i] = mByte ^ byte(i&0xff)
+		}
 	}
 	return result
 }
