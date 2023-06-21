@@ -165,6 +165,7 @@ func pluginRegisterHandler(writer http.ResponseWriter, req *http.Request) {
 	//注册插件接口,需要验证token只允许子插件调用,防止第三方程序恶意注册进来
 	if !checkToken(req) {
 		writer.WriteHeader(401)
+		writer.Write([]byte("<h1>session has expired</h1>"))
 		return
 	}
 	var manifest plugin.Manifest
