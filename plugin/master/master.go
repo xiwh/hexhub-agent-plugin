@@ -101,7 +101,7 @@ func (t masterHttpHandle) ServeHTTP(writer http.ResponseWriter, req *http.Reques
 		//如果有token则验证token是否有效
 		if !checkToken(req) {
 			writer.WriteHeader(401)
-			writer.Write([]byte("<h1>session invalid</h1>"))
+			writer.Write([]byte("<h1>session has expired</h1>"))
 			return
 		}
 	} else {
