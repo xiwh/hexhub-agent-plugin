@@ -243,7 +243,7 @@ func Post(pluginId string, uri string, req any, result any) error {
 func heartbeat() {
 	go func() {
 		for true {
-			time.Sleep(time.Minute)
+			time.Sleep(5 * time.Minute)
 			now := time.Now().UnixMilli()
 			pluginMap.IterCb(func(k string, info *PluginInfo) {
 				if info.Status == PluginStatusRunning {
