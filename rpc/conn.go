@@ -3,11 +3,11 @@ package rpc
 import (
 	"context"
 	"errors"
+	"github.com/gorilla/websocket"
 	cmap "github.com/orcaman/concurrent-map/v2"
 	"github.com/wonderivan/logger"
 	"github.com/xiwh/hexhub-agent-plugin/rpc/packet"
 	"math"
-	"nhooyr.io/websocket"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -78,7 +78,7 @@ func (t *conn) StartHandler() error {
 				return
 			}
 			time.Sleep(time.Second)
-			err := t.wsConn.Ping(t.ctx)
+			err := t.wsConn.WriteMessage(websocket.PingMessage, []byte("ping"))
 			if err != nil {
 				t.triggerClose(err)
 				return
@@ -206,11 +206,26 @@ func (t *conn) Read() (packet.Packet, error) {
 	if t.isClosed {
 		return p, ConnClosedError
 	}
-	_, b, err := t.wsConn.Read(t.ctx)
+	msgType, b, err := t.wsConn.ReadMessage()
 	if err != nil {
 		return p, err
 	}
-	return packet.DecodePacket(b, true)
+	switch msgType {
+	case websocket.BinaryMessage:
+		return packet.DecodePacket(b, true)
+	case websocket.PingMessage:
+		_ = t.wsConn.WriteMessage(websocket.PongMessage, []byte("pong"))
+		return packet.DecodePacket(b, true)
+		return t.Read()
+	case websocket.PongMessage:
+		return t.Read()
+	case websocket.CloseMessage:
+		closed := errors.New("closed")
+		t.triggerClose(closed)
+		return packet.Packet{}, closed
+
+	}
+	return packet.Packet{}, errors.New("read failure")
 }
 
 func (t *conn) Send(method string, v any) (uint32, error) {
@@ -272,7 +287,7 @@ func (t *conn) Close(err error) error {
 		//utf-8为非定长编码，按固定长度截取字节最后一个字编码可能被破坏需要删除，并且在最后添加省略号
 		msg = strings.ToValidUTF8(string(msgBytes), "") + ".."
 	}
-	return t.wsConn.Close(1000, msg)
+	return t.wsConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, msg))
 }
 
 func (t *conn) HandleFunc(method string, handle func(conn Conn, packet packet.Packet)) {
@@ -295,7 +310,7 @@ func (t *conn) SendSpecifyId(method string, id uint32, v any) error {
 	if err != nil {
 		return err
 	}
-	return t.wsConn.Write(t.ctx, websocket.MessageBinary, bytes)
+	return t.wsConn.WriteMessage(websocket.BinaryMessage, bytes)
 }
 
 func (t *conn) triggerClose(err error) {
