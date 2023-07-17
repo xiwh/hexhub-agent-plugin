@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	cmap "github.com/orcaman/concurrent-map/v2"
-	uuid "github.com/satori/go.uuid"
 	"github.com/vulcand/oxy/forward"
 	"github.com/wonderivan/logger"
 	"github.com/xiwh/hexhub-agent-plugin/plugin"
@@ -77,7 +77,7 @@ func Start(namespace string, version int, versionName, apiEndpoint string, allow
 	for _, s := range domainNameStrArr {
 		mAllowedDomainNames.Set(s, nil)
 	}
-	token := uuid.NewV4().String()
+	token := uuid.New().String()
 	plugin.Init(MasterId, namespace, apiEndpoint, port, debug, token)
 	manifests, err := plugin.GetManifests()
 	if err != nil {

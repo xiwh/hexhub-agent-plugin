@@ -3,7 +3,7 @@ package httputil
 import (
 	"encoding/json"
 	"fmt"
-	uuid "github.com/satori/go.uuid"
+	"github.com/google/uuid"
 	"io"
 	"net/http"
 	"net/url"
@@ -25,7 +25,7 @@ func (t *writeCounter) Write(p []byte) (int, error) {
 }
 
 func DownloadFile(url string, Callback func(total int64, current int64)) (string, error) {
-	tempFilePath := fmt.Sprintf("%s/%s.tmp", os.TempDir(), uuid.NewV4().String())
+	tempFilePath := fmt.Sprintf("%s/%s.tmp", os.TempDir(), uuid.New().String())
 	out, err := os.Create(tempFilePath)
 	if err != nil {
 		return "", err

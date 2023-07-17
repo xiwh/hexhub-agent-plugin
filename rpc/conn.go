@@ -10,6 +10,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -20,9 +21,10 @@ func NewConn(wsConn *websocket.Conn, ctx context.Context) Conn {
 	ctx, cancel := context.WithCancel(ctx)
 	v := &conn{
 		wsConn:            wsConn,
+		writeLock:         new(sync.Mutex),
 		isClosed:          false,
 		session:           cmap.New[any](),
-		handleMap:         cmap.New[func(conn Conn, packet packet.Packet)](),
+		handleMap:         cmap.New[handleFunc](),
 		replyFuncMap:      cmap.New[reply](),
 		channelMap:        cmap.New[*Channel](),
 		channelAcceptChan: make(chan packet.Packet, 128),
@@ -47,6 +49,7 @@ type Conn interface {
 	IsClosed() bool
 	Close(err error) error
 	HandleFunc(method string, handle func(conn Conn, packet packet.Packet))
+	HandleFuncAsync(method string, handle func(conn Conn, packet packet.Packet))
 	OnClose(f func(conn Conn, err error))
 	Ctx() context.Context
 }
@@ -56,11 +59,17 @@ type reply struct {
 	time int64
 }
 
+type handleFunc struct {
+	isAsync bool
+	handle  func(conn Conn, packet packet.Packet)
+}
+
 type conn struct {
 	wsConn            *websocket.Conn
+	writeLock         *sync.Mutex
 	isClosed          bool
 	session           cmap.ConcurrentMap[any]
-	handleMap         cmap.ConcurrentMap[func(conn Conn, packet packet.Packet)]
+	handleMap         cmap.ConcurrentMap[handleFunc]
 	channelMap        cmap.ConcurrentMap[*Channel]
 	replyFuncMap      cmap.ConcurrentMap[reply]
 	closeFunc         func(conn Conn, reason error)
@@ -78,7 +87,9 @@ func (t *conn) StartHandler() error {
 				return
 			}
 			time.Sleep(time.Second)
+			t.writeLock.Lock()
 			err := t.wsConn.WriteMessage(websocket.PingMessage, []byte("ping"))
+			t.writeLock.Unlock()
 			if err != nil {
 				t.triggerClose(err)
 				return
@@ -136,9 +147,13 @@ func (t *conn) StartHandler() error {
 				if ok {
 					reply.f(false, p)
 				} else {
-					methodFunc, ok := t.handleMap.Get(p.Method())
+					handle, ok := t.handleMap.Get(p.Method())
 					if ok {
-						methodFunc(t, p)
+						if handle.isAsync {
+							go handle.handle(t, p)
+						} else {
+							handle.handle(t, p)
+						}
 					}
 				}
 			}
@@ -214,8 +229,9 @@ func (t *conn) Read() (packet.Packet, error) {
 	case websocket.BinaryMessage:
 		return packet.DecodePacket(b, true)
 	case websocket.PingMessage:
+		t.writeLock.Lock()
 		_ = t.wsConn.WriteMessage(websocket.PongMessage, []byte("pong"))
-		return packet.DecodePacket(b, true)
+		t.writeLock.Unlock()
 		return t.Read()
 	case websocket.PongMessage:
 		return t.Read()
@@ -287,11 +303,17 @@ func (t *conn) Close(err error) error {
 		//utf-8为非定长编码，按固定长度截取字节最后一个字编码可能被破坏需要删除，并且在最后添加省略号
 		msg = strings.ToValidUTF8(string(msgBytes), "") + ".."
 	}
+	t.writeLock.Lock()
+	defer t.writeLock.Unlock()
 	return t.wsConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, msg))
 }
 
+func (t *conn) HandleFuncAsync(method string, handle func(conn Conn, packet packet.Packet)) {
+	t.handleMap.Set(method, handleFunc{true, handle})
+}
+
 func (t *conn) HandleFunc(method string, handle func(conn Conn, packet packet.Packet)) {
-	t.handleMap.Set(method, handle)
+	t.handleMap.Set(method, handleFunc{false, handle})
 }
 
 func (t *conn) OnClose(f func(conn Conn, err error)) {
@@ -310,6 +332,8 @@ func (t *conn) SendSpecifyId(method string, id uint32, v any) error {
 	if err != nil {
 		return err
 	}
+	t.writeLock.Lock()
+	defer t.writeLock.Unlock()
 	return t.wsConn.WriteMessage(websocket.BinaryMessage, bytes)
 }
 
