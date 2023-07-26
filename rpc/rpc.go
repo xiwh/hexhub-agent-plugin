@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-func Accept(w http.ResponseWriter, req *http.Request, ctx context.Context) (Conn, error) {
+func Accept(w http.ResponseWriter, req *http.Request, ctx context.Context, readLimit int64) (Conn, error) {
 	var upgrader = websocket.Upgrader{
 		ReadBufferSize:    0x1fff,
 		WriteBufferSize:   0x1fff,
@@ -18,7 +18,7 @@ func Accept(w http.ResponseWriter, req *http.Request, ctx context.Context) (Conn
 	if err != nil {
 		return nil, err
 	}
-	wsConn.SetReadLimit(1024 * 128)
+	wsConn.SetReadLimit(readLimit)
 
 	return NewConn(wsConn, ctx), err
 }
