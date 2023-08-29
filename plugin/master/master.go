@@ -40,6 +40,8 @@ const PluginStatusDownloading = 3
 const PluginStatusDownloadFailed = 4
 const PluginStatusInstallFailed = 5
 
+var RouteMap = make(map[string]func(http.ResponseWriter, *http.Request))
+
 type PluginInfo struct {
 	Id             string `json:"id"`
 	Name           string `json:"name"`
@@ -91,6 +93,10 @@ func Start(namespace string, version int, versionName, apiEndpoint string, allow
 	heartbeat()
 	pluginCoDeath()
 	panic(http.ListenAndServe(plugin.AgentAddr, new(masterHttpHandle)))
+}
+
+func RegisterRoute(pattern string, f func(http.ResponseWriter, *http.Request)) {
+	RouteMap[strings.TrimLeft(pattern, "/")] = f
 }
 
 func (t masterHttpHandle) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
@@ -163,7 +169,17 @@ func (t masterHttpHandle) ServeHTTP(writer http.ResponseWriter, req *http.Reques
 		pluginRegisterHandler(writer, req)
 		break
 	default:
-		defaultHandle(writer, req)
+		uri = strings.TrimLeft(uri, "/")
+		arr := strings.Split(uri, "/")
+		if arr[0] == "master" {
+			uri = strings.Join(arr[1:], "/")
+			handFunc := RouteMap[uri]
+			if handFunc != nil {
+				handFunc(writer, req)
+			}
+		} else {
+			defaultHandle(writer, req)
+		}
 		break
 	}
 }
