@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/xiwh/hexhub-agent-plugin/util/buf"
+	"google.golang.org/protobuf/proto"
 )
 
 type Packet struct {
@@ -38,6 +39,10 @@ func (t Packet) Bytes() []byte {
 
 func (t Packet) Data(v any) error {
 	return json.Unmarshal(t.mBytes, v)
+}
+
+func (t Packet) ProtoData(v proto.Message) error {
+	return proto.Unmarshal(t.mBytes, v)
 }
 
 func DecodePacket(bytes []byte, isXor bool) (packet Packet, err error) {
@@ -83,7 +88,14 @@ func CreatePacket(method string, id uint32, v any) (Packet, error) {
 	case []byte:
 		dataBytes = v.([]byte)
 	case interface{}:
-		temp, err := json.Marshal(&v)
+		protoMsg, ok := v.(proto.Message)
+		var temp []byte
+		var err error
+		if ok {
+			temp, err = proto.Marshal(protoMsg)
+		} else {
+			temp, err = json.Marshal(v)
+		}
 		if err != nil {
 			return Packet{}, err
 		}

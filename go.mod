@@ -9,6 +9,7 @@ require (
 	github.com/vulcand/oxy v1.4.1
 	github.com/wonderivan/logger v1.0.0
 	golang.org/x/sys v0.0.0-20220307203707-22a9840ba4d7
+	google.golang.org/protobuf v1.31.0
 )
 
 require github.com/sirupsen/logrus v1.8.1 // indirect
