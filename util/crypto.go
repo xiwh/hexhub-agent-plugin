@@ -5,8 +5,8 @@ import (
 	"compress/gzip"
 	"crypto/aes"
 	"crypto/cipher"
-	"encoding/base64"
 	"encoding/json"
+	"github.com/akamensky/base58"
 	"io"
 	"math/rand"
 )
@@ -19,7 +19,7 @@ func RandKey(size int) []byte {
 	return b
 }
 
-// AesEncryptJson AES json对象加密并返回base64
+// AesEncryptJson AES json对象加密并返回base58
 func AesEncryptJson(v any, key []byte) (string, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -28,9 +28,9 @@ func AesEncryptJson(v any, key []byte) (string, error) {
 	return AesEncryptString(string(b), key)
 }
 
-// AesDecryptJson AES 解密base64并返回json序列化对象
-func AesDecryptJson(base64Val string, v any, key []byte) error {
-	b, err := AesDecryptString(base64Val, key)
+// AesDecryptJson AES 解密base58并返回json序列化对象
+func AesDecryptJson(base58Val string, v any, key []byte) error {
+	b, err := AesDecryptString(base58Val, key)
 	if err != nil {
 		return err
 	}
@@ -41,23 +41,64 @@ func AesDecryptJson(base64Val string, v any, key []byte) error {
 	return nil
 }
 
-// AesEncryptString AES字符串加密并返回base64
+func compressBytes(input []byte) ([]byte, error) {
+	var compressedBuffer bytes.Buffer
+	writer, _ := gzip.NewWriterLevel(&compressedBuffer, gzip.BestCompression)
+
+	_, err := writer.Write(input)
+	if err != nil {
+		return nil, err
+	}
+
+	err = writer.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	return compressedBuffer.Bytes(), nil
+}
+
+func decompressBytes(input []byte) ([]byte, error) {
+	reader, err := gzip.NewReader(bytes.NewReader(input))
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	decompressedData, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+
+	return decompressedData, nil
+}
+
+// AesEncryptString AES字符串加密并返回base58
 func AesEncryptString(data string, key []byte) (string, error) {
-	b := []byte(data)
-	b, err := AesEncrypt(b, key)
+	b, err := compressBytes([]byte(data))
 	if err != nil {
 		return "", err
 	}
-	return base64.StdEncoding.EncodeToString(b), nil
+
+	b, err = AesEncrypt(b, key)
+	if err != nil {
+		return "", err
+	}
+
+	return base58.Encode(b), nil
 }
 
-// AesDecryptString AES字符串解密base64并返回解密字符串
-func AesDecryptString(base64Val string, key []byte) (string, error) {
-	b, err := base64.StdEncoding.DecodeString(base64Val)
+// AesDecryptString AES字符串解密base58并返回解密字符串
+func AesDecryptString(base58Val string, key []byte) (string, error) {
+	b, err := base58.Decode(base58Val)
 	if err != nil {
 		return "", err
 	}
 	b, err = AesDecrypt(b, key)
+	if err != nil {
+		return "", err
+	}
+	b, err = decompressBytes(b)
 	if err != nil {
 		return "", err
 	}
