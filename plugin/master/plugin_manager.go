@@ -128,24 +128,22 @@ func StartPlugin(pluginId string) error {
 	pluginInfo := initManifest(manifest)
 	pluginInfo.lock.Lock()
 	defer pluginInfo.lock.Unlock()
-	if currentInfo.Status == PluginStatusStarting || currentInfo.Status == PluginStatusRunning {
-		return nil
-	}
 	return run(pluginInfo)
 }
 
 var latestInfo *VersionInfo
-var getLatestInfoTime time.Duration
+var getLatestInfoTime int64
 
-func CheckUpdate(pluginId string) (result CheckUpdateResult, err error) {
-	now := time.Duration(time.Now().UnixMilli())
-	if latestInfo == nil || now-getLatestInfoTime >= 5*time.Minute {
+func CheckUpdate(pluginId string, appVersion int) (result CheckUpdateResult, err error) {
+	now := time.Now().UnixMilli()
+	if latestInfo == nil || now-getLatestInfoTime >= 5*60000 {
 		info := VersionInfo{}
 		//5分钟内只获取一次版本信息
 		err = plugin.ApiGet("client/plugin/latest-version", map[string]string{
-			"os":       runtime.GOOS,
-			"arch":     runtime.GOARCH,
-			"pluginId": pluginId,
+			"os":         runtime.GOOS,
+			"arch":       runtime.GOARCH,
+			"pluginId":   pluginId,
+			"appVersion": strconv.Itoa(appVersion),
 		}, &info)
 		if err != nil {
 			return result, err
@@ -272,6 +270,7 @@ func run(pluginInfo *PluginInfo) error {
 	//println(argsStr)
 
 	pluginInfo.Status = PluginStatusStarting
+	currentEndpoint := pluginInfo.Endpoint
 
 	cmd, err := executil.ExecChildProcess(
 		filepath.Join(pluginInfo.PluginDir, pluginInfo.ExecEnter),
@@ -287,8 +286,12 @@ func run(pluginInfo *PluginInfo) error {
 	}
 
 	go func() {
+
 		defer func() {
-			pluginInfo.Status = PluginStatusNotStarted
+			//如果插件进程已经是另外一个进程了，则不用更新状态
+			if currentEndpoint == pluginInfo.Endpoint {
+				pluginInfo.Status = PluginStatusNotStarted
+			}
 			err := recover()
 			if err != nil {
 				logger.Error(err)
@@ -298,7 +301,6 @@ func run(pluginInfo *PluginInfo) error {
 		if err != nil {
 			logger.Error(err)
 		}
-		pluginInfo.Status = PluginStatusNotStarted
 	}()
 
 	return err
@@ -310,7 +312,7 @@ func WaitStopPlugin(pluginInfo *PluginInfo) error {
 		//停止成功
 		return nil
 	}
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 25; i++ {
 		_ = _stopPlugin(pluginInfo)
 		time.Sleep(100 * time.Millisecond)
 		if Post(pluginInfo.Id, "ping", nil, nil) != nil {
@@ -322,7 +324,7 @@ func WaitStopPlugin(pluginInfo *PluginInfo) error {
 }
 
 func _stopPlugin(pluginInfo *PluginInfo) error {
-	if pluginInfo.Status == PluginStatusRunning {
+	if pluginInfo.Status == PluginStatusRunning || pluginInfo.Status == PluginStatusStarting {
 		err := Post(pluginInfo.Id, "kill", nil, nil)
 		pluginInfo.Status = PluginStatusNotStarted
 		return err

@@ -7,7 +7,7 @@ import (
 	httputil2 "github.com/xiwh/hexhub-agent-plugin/util/httputil"
 	"net/http"
 	"net/url"
-	"runtime"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -32,27 +32,6 @@ func infoHandler(writer http.ResponseWriter, req *http.Request) {
 		Version:     CurrentVersion,
 		VersionName: CurrentVersionName,
 	}))
-}
-
-func checkUpdateHandler(writer http.ResponseWriter, req *http.Request) {
-	var latestInfo VersionInfo
-
-	err := plugin.ApiGet("client/plugin/latest-version", map[string]string{
-		"os":       runtime.GOOS,
-		"arch":     runtime.GOARCH,
-		"pluginId": MasterId,
-	}, &latestInfo)
-	if err != nil {
-		_ = httputil2.OutResult(writer, httputil2.Error(err))
-		return
-	}
-
-	if CurrentVersion < latestInfo.Version {
-		//有更新
-		_ = httputil2.OutResult(writer, httputil2.Success(latestInfo))
-	}
-
-	_ = httputil2.OutResult(writer, httputil2.Success[any](nil))
 }
 
 func pluginListHandler(writer http.ResponseWriter, req *http.Request) {
@@ -84,9 +63,9 @@ func pluginStartHandler(writer http.ResponseWriter, req *http.Request) {
 		_ = httputil2.OutResult(writer, httputil2.Error(err))
 		return
 	} else {
-		//启动之后每个250ms获取一下状态判断是否启动成功,直到尝试超时
-		for i := 0; i < 10; i++ {
-			time.Sleep(250 * time.Millisecond)
+		//启动之后每个50ms获取一下状态判断是否启动成功,直到尝试超时
+		for i := 0; i < 50; i++ {
+			time.Sleep(50 * time.Millisecond)
 			pluginInfo, ok := pluginMap.Get(pluginId)
 			if ok && pluginInfo.Status == PluginStatusRunning {
 				_ = httputil2.OutResult(writer, httputil2.Success(""))
@@ -105,9 +84,9 @@ func pluginRestartHandler(writer http.ResponseWriter, req *http.Request) {
 		_ = httputil2.OutResult(writer, httputil2.Error(err))
 		return
 	} else {
-		//启动之后每个250ms获取一下状态判断是否启动成功,直到尝试超时
-		for i := 0; i < 10; i++ {
-			time.Sleep(250 * time.Millisecond)
+		//启动之后每个50ms获取一下状态判断是否启动成功,直到尝试超时
+		for i := 0; i < 50; i++ {
+			time.Sleep(50 * time.Millisecond)
 			pluginInfo, ok := pluginMap.Get(pluginId)
 			if ok && pluginInfo.Status == PluginStatusRunning {
 				_ = httputil2.OutResult(writer, httputil2.Success(""))
@@ -126,9 +105,9 @@ func pluginStopHandler(writer http.ResponseWriter, req *http.Request) {
 		_ = httputil2.OutResult(writer, httputil2.Error(err))
 		return
 	} else {
-		//启动之后每个250ms获取一下状态判断是否关闭成功,直到尝试超时
-		for i := 0; i < 10; i++ {
-			time.Sleep(250 * time.Millisecond)
+		//启动之后每个50ms获取一下状态判断是否关闭成功,直到尝试超时
+		for i := 0; i < 50; i++ {
+			time.Sleep(50 * time.Millisecond)
 			pluginInfo, ok := pluginMap.Get(pluginId)
 			if ok && pluginInfo.Status == PluginStatusNotStarted {
 				_ = httputil2.OutResult(writer, httputil2.Success(""))
@@ -153,7 +132,12 @@ func pluginUninstallHandler(writer http.ResponseWriter, req *http.Request) {
 func pluginCheckUpdateHandler(writer http.ResponseWriter, req *http.Request) {
 	req.ParseForm()
 	pluginId := req.Form.Get("pluginId")
-	result, err := CheckUpdate(pluginId)
+	appVersion, err := strconv.Atoi(req.Form.Get("appVersion"))
+	if err != nil {
+		_ = httputil2.OutResult(writer, httputil2.Error(err))
+		return
+	}
+	result, err := CheckUpdate(pluginId, appVersion)
 	if err != nil {
 		_ = httputil2.OutResult(writer, httputil2.Error(err))
 		return
@@ -176,8 +160,8 @@ func pluginRegisterHandler(writer http.ResponseWriter, req *http.Request) {
 	}
 
 	oldPluginInfo, ok := pluginMap.Get(manifest.PluginId)
-	if ok && oldPluginInfo.Status == PluginStatusRunning {
-		//如果当前插件有旧进程在运行则先退出此进程
+	if ok && (oldPluginInfo.Status == PluginStatusRunning || oldPluginInfo.Status == PluginStatusStarting) {
+		//如果当前插件有旧进程在运行则干掉旧进程
 		err = StopPlugin(manifest.PluginId)
 		if err != nil {
 			logger.Error(err)
@@ -210,7 +194,9 @@ func defaultHandle(writer http.ResponseWriter, req *http.Request) {
 		//记录对应插件在线连接数和最后连接时间,用于实现自动退出
 		pluginInfo.LastConnTime = time.Now().UnixMilli()
 		atomic.AddInt64(&pluginInfo.Connections, 1)
-		defer atomic.AddInt64(&pluginInfo.Connections, -1)
+		defer func() {
+			atomic.AddInt64(&pluginInfo.Connections, -1)
+		}()
 		if pluginInfo.Status == PluginStatusRunning && pluginInfo.Endpoint != "" {
 			redirectUrl := ""
 			if idx != -1 {

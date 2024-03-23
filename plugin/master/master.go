@@ -29,7 +29,7 @@ var mForward *forward.Forwarder
 var mAllowedDomainNames = cmap.New[any]()
 
 // AutoExitTimeLimit 自动退出时限,超过多久没有进行请求交互才自动退出
-const AutoExitTimeLimit = int64(time.Minute * 5)
+const AutoExitTimeLimit = 5 * 60000
 
 const MasterId = "master"
 
@@ -140,9 +140,6 @@ func (t masterHttpHandle) ServeHTTP(writer http.ResponseWriter, req *http.Reques
 		break
 	case "/info":
 		infoHandler(writer, req)
-		break
-	case "/check-update":
-		checkUpdateHandler(writer, req)
 		break
 	case "/plugin/list":
 		pluginListHandler(writer, req)
@@ -265,7 +262,9 @@ func heartbeat() {
 				if info.Status == PluginStatusRunning {
 					if info.AutoExit && info.Connections == 0 && (now-info.LastConnTime) >= AutoExitTimeLimit {
 						//达到自动退出的条件(允许自动退出且没有进行中的连接且超过5分钟未进行连接)
-						_ = StopPlugin(info.Id)
+						if !plugin.Debug {
+							_ = StopPlugin(info.Id)
+						}
 					} else {
 						go func() {
 							//异步运行防止堵塞
