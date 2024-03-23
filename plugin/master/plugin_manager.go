@@ -34,6 +34,12 @@ type CheckUpdateResult struct {
 	FirstInstalled bool        `json:"firstInstalled"`
 }
 
+type latestPluginInfo struct {
+	info VersionInfo
+	time int64
+}
+
+var latestInfoMap = cmap.New[*latestPluginInfo]()
 var pluginMap = cmap.New[*PluginInfo]()
 var globalLock = new(sync.Mutex)
 
@@ -131,12 +137,10 @@ func StartPlugin(pluginId string) error {
 	return run(pluginInfo)
 }
 
-var latestInfo *VersionInfo
-var getLatestInfoTime int64
-
 func CheckUpdate(pluginId string, appVersion int) (result CheckUpdateResult, err error) {
 	now := time.Now().UnixMilli()
-	if latestInfo == nil || now-getLatestInfoTime >= 5*60000 {
+	latestInfo, _ := latestInfoMap.Get(pluginId)
+	if latestInfo == nil || now-latestInfo.time >= 5*60000 {
 		info := VersionInfo{}
 		//5分钟内只获取一次版本信息
 		err = plugin.ApiGet("client/plugin/latest-version", map[string]string{
@@ -148,8 +152,13 @@ func CheckUpdate(pluginId string, appVersion int) (result CheckUpdateResult, err
 		if err != nil {
 			return result, err
 		}
-		latestInfo = &info
-		getLatestInfoTime = now
+		if latestInfo == nil {
+			latestInfo = &latestPluginInfo{info: info, time: now}
+			latestInfoMap.Set(pluginId, latestInfo)
+		} else {
+			latestInfo.info = info
+			latestInfo.time = now
+		}
 	}
 
 	currentInfo, ok := pluginMap.Get(pluginId)
@@ -158,9 +167,9 @@ func CheckUpdate(pluginId string, appVersion int) (result CheckUpdateResult, err
 	if !ok ||
 		currentInfo.Status == PluginStatusDownloadFailed ||
 		currentInfo.Status == PluginStatusInstallFailed ||
-		currentInfo.Version < latestInfo.Manifest.Version {
+		currentInfo.Version < latestInfo.info.Manifest.Version {
 
-		err = InstallPlugin(*latestInfo, latestInfo.Manifest)
+		err = InstallPlugin(latestInfo.info, latestInfo.info.Manifest)
 		if err != nil {
 			return result, err
 		}
@@ -324,7 +333,7 @@ func WaitStopPlugin(pluginInfo *PluginInfo) error {
 }
 
 func _stopPlugin(pluginInfo *PluginInfo) error {
-	if pluginInfo.Status == PluginStatusRunning || pluginInfo.Status == PluginStatusStarting {
+	if pluginInfo.Endpoint != "" {
 		err := Post(pluginInfo.Id, "kill", nil, nil)
 		pluginInfo.Status = PluginStatusNotStarted
 		return err
